@@ -53,7 +53,12 @@
   pre .c{color:var(--text3)}pre .a{color:var(--acc)}pre .i{color:var(--ice)}
   .two{display:grid;grid-template-columns:1.1fr .9fr;gap:36px;align-items:start}
   @media (max-width:820px){.two{grid-template-columns:1fr}}
-  .phone{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-top:28px}
+  .phone{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:28px}
+  @media (max-width:820px){.phone{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}}
+  .gallery{display:grid;gap:18px}
+  .gallery figure{margin:0;border:1px solid var(--line2);border-radius:12px;overflow:hidden;background:var(--panel)}
+  .gallery img{display:block;width:100%;height:auto}
+  .gallery figcaption{font-family:var(--mono);font-size:12px;color:var(--text2);padding:10px 14px;border-top:1px solid var(--line)}
   .phone figure{margin:0;border:1px solid var(--line2);border-radius:14px;overflow:hidden;background:var(--panel)}
   .phone img{display:block;width:100%;height:auto}
   .phone figcaption{font-family:var(--mono);font-size:12px;color:var(--text2);padding:10px 14px;border-top:1px solid var(--line)}
@@ -70,7 +75,7 @@
 <body>
 <header><div class="wrap bar">
   <span class="mark"><i></i>RHAPSODE</span>
-  <nav><a href="#how">how it works</a><a href="#modes">modes</a><a href="#phone">on the phone</a><a href="#run">run it</a><a href="https://github.com/ZahakJ/rhapsode">github</a></nav>
+  <nav><a href="#how">how it works</a><a href="#modes">modes</a><a href="#edit">the tools</a><a href="#phone">on the phone</a><a href="#run">run it</a><a href="https://github.com/ZahakJ/rhapsode">github</a></nav>
 </div></header>
 
 <main class="wrap">
@@ -82,7 +87,7 @@
       <a class="btn p" href="https://github.com/ZahakJ/rhapsode">Get the source</a>
       <a class="btn" href="#run"><code>npm run dev</code></a>
     </div>
-    <div class="shot"><img src="assets/compose.png" alt="The cutting room: sources on the left, the stage and timeline in the centre, the inspector on the right" width="1440" height="900"></div>
+    <div class="shot"><img src="assets/compose.png" alt="The cutting room: sources and trimmers on the left, the stage and timeline in the centre, the inspector on the right" width="1600" height="1000"></div>
   </div>
 
   <section id="what">
@@ -136,6 +141,16 @@
     </div>
   </section>
 
+  <section id="edit">
+    <h2>Cut, crop, place, caption</h2>
+    <p class="sub">A crop and rotate panel per source, a draggable box for the picture-in-picture, captions you drag into place, and a result page that hands you the link.</p>
+    <div class="gallery">
+      <figure><img src="assets/crop.png" alt="The crop panel: a draggable rectangle with rule-of-thirds guides, aspect presets, rotate and flip" width="1600" height="1000"><figcaption>crop · rotate · flip, per source</figcaption></figure>
+      <figure><img src="assets/result.png" alt="A finished render: Big Buck Bunny with a Sintel clip boxed in the corner and a caption" width="1600" height="1000"><figcaption>the result — copy the link, download, remix</figcaption></figure>
+      <figure><img src="assets/wall.png" alt="The wall of renders with the storage strip" width="1600" height="1000"><figcaption>the wall, with the storage budget in plain sight</figcaption></figure>
+    </div>
+  </section>
+
   <section id="phone">
     <div class="two">
       <div>
@@ -149,8 +164,9 @@
         <div class="keys"><kbd>space</kbd><kbd>←</kbd><kbd>→</kbd><kbd>shift</kbd><kbd>I</kbd><kbd>O</kbd><kbd>home</kbd><kbd>end</kbd><kbd>L</kbd></div>
       </div>
       <div class="phone">
-        <figure><img src="assets/phone-cut.png" alt="Trimming a clip on the phone" width="390" height="844"><figcaption>cut</figcaption></figure>
-        <figure><img src="assets/phone-compose.png" alt="Composing on the phone" width="390" height="844"><figcaption>compose</figcaption></figure>
+        <figure><img src="assets/phone-pieces.png" alt="Picking the pieces on the phone" width="585" height="996"><figcaption>1 · pieces</figcaption></figure>
+        <figure><img src="assets/phone-cut.png" alt="Trimming a clip on the phone with typed in and out points" width="585" height="996"><figcaption>2 · cut</figcaption></figure>
+        <figure><img src="assets/phone-compose.png" alt="Composing on the phone: stage and timeline" width="585" height="996"><figcaption>3 · compose</figcaption></figure>
       </div>
     </div>
   </section>

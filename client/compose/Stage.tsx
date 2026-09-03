@@ -147,6 +147,14 @@ export function Stage() {
     baseVideo.current?.pause()
   }, [base?.id, overlay?.id, setPlaying, setClock])
 
+  // a typed or dragged in-point re-frames the paused preview immediately
+  useEffect(() => {
+    const v = baseVideo.current
+    if (!isVideoBase || !v || playing) return
+    if (Math.abs(v.currentTime - s.baseIn) > 0.05) v.currentTime = s.baseIn
+    setClock(0)
+  }, [isVideoBase, s.baseIn, playing, setClock])
+
   // ——— keep the overlay video in step ———
   const inWindow = clock >= at && clock < at + ovLen
   useEffect(() => {
@@ -154,6 +162,8 @@ export function Stage() {
     if (!ov) return
     if (!playing) {
       ov.pause()
+      const rest = inWindow ? ovIn + (clock - at) : ovIn
+      if (Math.abs(ov.currentTime - rest) > 0.05) ov.currentTime = rest
       return
     }
     if (inWindow) {
@@ -288,7 +298,7 @@ export function Stage() {
     )
 
   const ovMedia = overlay ? (
-    <video ref={ovVideo} className="rh-stage__media rh-stage__ov" src={overlay.proxyUrl ?? undefined} playsInline preload="metadata" />
+    <video ref={ovVideo} className="rh-stage__media rh-stage__ov" src={overlay.proxyUrl ?? undefined} playsInline preload="metadata" onLoadedMetadata={(e) => { e.currentTarget.currentTime = ovIn }} />
   ) : null
   const ovIn_ = (box: { w: number; h: number }) =>
     overlay ? (

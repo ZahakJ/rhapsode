@@ -106,6 +106,30 @@ export function Trimmer({
     [inT, duration, onChange, seek],
   )
 
+  // Typed times and "set here" mean it: an in past the out pushes the out
+  // along (keeping the span), and vice versa. Dragged handles still cannot
+  // cross each other — that is what a handle is for.
+  const placeIn = useCallback(
+    (t: number, moveHead = true) => {
+      const nin = clamp(round3(t), 0, Math.max(0, duration - MIN_SPAN))
+      const span = outT - inT
+      const nout = nin > outT - MIN_SPAN ? clamp(round3(nin + Math.max(MIN_SPAN, span)), nin + MIN_SPAN, duration) : outT
+      onChange(nin, nout)
+      if (moveHead) seek(nin)
+    },
+    [inT, outT, duration, onChange, seek],
+  )
+  const placeOut = useCallback(
+    (t: number, moveHead = true) => {
+      const nout = clamp(round3(t), MIN_SPAN, duration)
+      const span = outT - inT
+      const nin = nout < inT + MIN_SPAN ? clamp(round3(nout - Math.max(MIN_SPAN, span)), 0, nout - MIN_SPAN) : inT
+      onChange(nin, nout)
+      if (moveHead) seek(nout)
+    },
+    [inT, outT, duration, onChange, seek],
+  )
+
   const play = () => {
     const v = videoRef.current
     if (!v) return
@@ -181,12 +205,12 @@ export function Trimmer({
       case "i":
       case "I":
         e.preventDefault()
-        setIn(head, false)
+        placeIn(head, false)
         break
       case "o":
       case "O":
         e.preventDefault()
-        setOut(head, false)
+        placeOut(head, false)
         break
       case "Home":
         e.preventDefault()
@@ -252,12 +276,12 @@ export function Trimmer({
       </div>
 
       <div className="rh-trim__times">
-        <TimeField label="in" value={inT} onCommit={(t) => setIn(t)} />
+        <TimeField label="in" value={inT} onCommit={(t) => placeIn(t)} />
         <div className="rh-trim__tc" aria-live="off">
           <span className="rh-trim__tclabel">playhead</span>
           <span className="rh-trim__tcval mono">{fmtTC(head)}</span>
         </div>
-        <TimeField label="out" value={outT} onCommit={(t) => setOut(t)} align="right" />
+        <TimeField label="out" value={outT} onCommit={(t) => placeOut(t)} align="right" />
       </div>
 
       <div className="rh-trim__bar" ref={barRef} onPointerDown={onBarDown} onPointerMove={onHandleMove} onPointerUp={onHandleUp} onPointerCancel={onHandleUp}>
@@ -314,10 +338,10 @@ export function Trimmer({
           </button>
         </div>
         <div className="rh-trim__tgroup">
-          <button className="rh-tbtn rh-tbtn--set" onClick={() => setIn(head, false)} title="set in at the playhead (I)">
+          <button className="rh-tbtn rh-tbtn--set" onClick={() => placeIn(head, false)} title="set in at the playhead (I)">
             <span className="mono">[</span> set in
           </button>
-          <button className="rh-tbtn rh-tbtn--set" onClick={() => setOut(head, false)} title="set out at the playhead (O)">
+          <button className="rh-tbtn rh-tbtn--set" onClick={() => placeOut(head, false)} title="set out at the playhead (O)">
             set out <span className="mono">]</span>
           </button>
           <button className={`rh-tbtn${loop ? " rh-tbtn--on" : ""}`} onClick={() => setLoop((x) => !x)} title="loop the selection (L)">
