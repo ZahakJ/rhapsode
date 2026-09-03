@@ -1,0 +1,136 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg-0);
+  color: var(--text-1);
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  /* phone hygiene: no rotate-to-inflate, no grey flash on tap, and no
+     pull-to-refresh yanking the page out from under a canvas drag */
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+/* the aurora — slow-drifting nebula behind every surface */
+body::before {
+  content: '';
+  position: fixed;
+  inset: -22%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(42% 36% at 18% 28%, rgba(237, 49, 63, 0.13), transparent 62%),
+    radial-gradient(36% 42% at 82% 16%, rgba(255, 122, 54, 0.1), transparent 62%),
+    radial-gradient(46% 40% at 62% 88%, rgba(255, 196, 64, 0.07), transparent 62%),
+    radial-gradient(30% 30% at 38% 62%, rgba(140, 30, 30, 0.1), transparent 60%);
+  animation: mm-aurora 32s ease-in-out infinite alternate;
+}
+@keyframes mm-aurora {
+  from {
+    transform: translate3d(-2.5%, -2%, 0) rotate(-2deg) scale(1);
+  }
+  50% {
+    transform: translate3d(1.5%, 1%, 0) rotate(1deg) scale(1.06);
+  }
+  to {
+    transform: translate3d(3%, 2.5%, 0) rotate(2.5deg) scale(1.1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  body::before {
+    animation: none;
+  }
+}
+
+/* dvh, not vh — the shrinking URL bar must not push the tab bar off-screen */
+#root {
+  height: 100%;
+  height: 100dvh;
+}
+
+::selection {
+  background: var(--accent-dim);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* every tappable thing opts out of the double-tap-to-zoom delay */
+button,
+a,
+label,
+select,
+summary,
+[role='button'] {
+  touch-action: manipulation;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+/* thin instrument scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes ms-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes ms-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

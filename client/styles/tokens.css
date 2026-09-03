@@ -1,0 +1,124 @@
+/* Design tokens — the only place raw values live. Color is reserved for
+   meaning: accent = selection/active/the-manipulable-thing, status colors =
+   semantics only. The app claims its accent via <body data-app="…">. */
+:root {
+  /* surfaces — obsidian near-black with a faint charred undertone,
+     slightly translucent so the ember glow bleeds through. */
+  --bg-0: #060404;
+  --bg-1: rgba(19, 13, 11, 0.82);
+  --bg-2: rgba(32, 22, 18, 0.86);
+  --panel: rgba(14, 9, 8, 0.76);
+  /* the one opaque surface: sheets and phone dialogs sit ON the canvas, so
+     they can't be translucent without the meme bleeding through its controls */
+  --sheet: #0d0908;
+  --panel-blur: 8px;
+  --bg-hover: rgba(255, 255, 255, 0.05);
+
+  /* hairlines — neutral; never tinted */
+  --line-1: rgba(255, 255, 255, 0.08);
+  --line-2: rgba(255, 255, 255, 0.14);
+
+  /* text */
+  --text-1: #f1ebe6;
+  --text-2: #a89e97;
+  --text-3: #6b615a;
+
+  /* default accent — overridden by [data-app] below */
+  --accent-rgb: 100, 216, 255;
+
+  /* the supporting cast for gradients: flame + gold — a hot sweep, no purple */
+  --flame-rgb: 255, 168, 74;
+  --gold-rgb: 255, 196, 64;
+
+  /* status — semantic only */
+  --ok: #58d5a0;
+  --ok-dim: rgba(88, 213, 160, 0.12);
+  --warn: #f2c14e;
+  --warn-dim: rgba(242, 193, 78, 0.12);
+  --danger: #ff6b6b;
+  --danger-dim: rgba(255, 107, 107, 0.12);
+
+  /* space */
+  --sp-1: 4px;
+  --sp-2: 7px;
+  --sp-3: 10px;
+  --sp-4: 14px;
+  --sp-5: 18px;
+  --sp-6: 28px;
+  --sp-7: 44px;
+  --sp-8: 68px;
+
+  /* radii */
+  --r-1: 5px;
+  --r-2: 8px;
+  --r-3: 12px;
+
+  /* type — two sizes up from the family default; memes are not a spreadsheet */
+  --fs-2xs: 12px;
+  --fs-xs: 13px;
+  --fs-sm: 15px;
+  --fs-md: 17px;
+  --fs-lg: 19px;
+  --fs-xl: 24px;
+  --fs-2xl: 34px;
+  --font-ui: 'Inter Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SFMono-Regular', monospace;
+  /* the meme voice — Anton, the open Impact stand-in */
+  --font-display: 'Anton', 'Impact', 'Arial Black', sans-serif;
+
+  /* motion */
+  --ease: cubic-bezier(0.2, 0.9, 0.3, 1);
+  --dur-control: 120ms;
+  --dur-travel: 250ms;
+  --dur-intro: 400ms;
+
+  /* elevation */
+  --shadow-1: 0 8px 32px rgba(0, 0, 0, 0.35);
+  --shadow-2: 0 16px 48px rgba(0, 0, 0, 0.5);
+
+  /* the notch tax — zero everywhere but a phone (needs viewport-fit=cover) */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+
+  /* phone chrome heights — the tab bar and the titlebar shrink on small glass */
+  --hud-h: 66px;
+  --tabbar-h: 58px;
+}
+
+/* Derived accent variables live on body — NOT :root — so they compute on the
+   same element the [data-app] --accent-rgb override targets. Declared on
+   :root they would lock in the default before the override applies. */
+body {
+  --accent: rgb(var(--accent-rgb));
+  --accent-dim: rgba(var(--accent-rgb), 0.12);
+  --accent-line: rgba(var(--accent-rgb), 0.45);
+  --accent-glow: 0 0 12px rgba(var(--accent-rgb), 0.35);
+  --accent-text-glow: 0 0 8px rgba(var(--accent-rgb), 0.45);
+
+  --flame: rgb(var(--flame-rgb));
+  --gold: rgb(var(--gold-rgb));
+  /* the signature sweep: blood → flame → gold, fire out of darkness */
+  --grad: linear-gradient(120deg, var(--accent), var(--flame) 55%, var(--gold));
+  --grad-soft: linear-gradient(
+    135deg,
+    rgba(var(--accent-rgb), 0.22),
+    rgba(var(--flame-rgb), 0.15) 55%,
+    rgba(var(--gold-rgb), 0.1)
+  );
+}
+
+/* one accent per instrument — stage coral, the warm spot on a dark stage */
+[data-app='rhapsode'] {
+  --accent-rgb: 255, 122, 89;
+}
+
+/* Reduced motion: decorative durations collapse to zero. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-control: 0ms;
+    --dur-travel: 0ms;
+    --dur-intro: 0ms;
+  }
+}

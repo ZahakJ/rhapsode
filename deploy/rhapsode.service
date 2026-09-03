@@ -1,0 +1,46 @@
+[Unit]
+# PartOf is a personal grouping (the avicenna-suite target) — drop it if you
+# don't run that target, and adjust WorkingDirectory/ReadWritePaths to your own
+# checkout before installing.
+PartOf=avicenna-suite.target
+Description=Rhapsode (clip-and-overlay forge + media host)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/Documents/side/rhapsode
+ExecStart=/usr/bin/node --env-file-if-exists=.env server/index.ts
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+# yt-dlp and ffmpeg scratch space stays inside the data dir (ReadWritePaths)
+Environment=TMPDIR=%h/Documents/side/rhapsode/data/tmp
+
+# sandboxing — no MemoryDenyWriteExecute (breaks the V8 JIT) and no
+# PrivateDevices (ffmpeg needs /dev/nvidia* for NVENC; see DeviceAllow)
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/Documents/side/rhapsode/data
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+CapabilityBoundingSet=
+SystemCallFilter=@system-service
+DevicePolicy=auto
+DeviceAllow=/dev/nvidiactl rw
+DeviceAllow=/dev/nvidia-uvm rw
+DeviceAllow=/dev/nvidia-uvm-tools rw
+DeviceAllow=/dev/nvidia-modeset rw
+DeviceAllow=/dev/nvidia0 rw
+DeviceAllow=/dev/dri rw
+MemoryMax=6G
+TasksMax=512
+
+[Install]
+WantedBy=default.target

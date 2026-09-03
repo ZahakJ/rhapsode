@@ -1,0 +1,38 @@
+{
+  "name": "rhapsode",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Clip a piece of any video, lay it over another — ῥαψῳδός, the song-stitcher",
+  "scripts": {
+    "dev": "vite --port 5951 --strictPort",
+    "dev:server": "PORT=5950 node --watch --env-file-if-exists=.env server/index.ts",
+    "build": "tsc -p tsconfig.json && vite build",
+    "preview": "vite preview --port 6951 --strictPort",
+    "start": "node --env-file-if-exists=.env server/index.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "smoke": "node tools/screenshot.mjs"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.2.5",
+    "@fontsource-variable/jetbrains-mono": "^5.2.5",
+    "@fontsource/anton": "^5.2.5",
+    "@hono/node-server": "^1.14.0",
+    "hono": "^4.7.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zod": "^4.0.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "playwright": "^1.54.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.0.0",
+    "vitest": "^3.2.0"
+  }
+}

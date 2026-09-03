@@ -1,0 +1,402 @@
+/* ————— Panel ————— */
+.ms-panel {
+  background: var(--panel);
+  backdrop-filter: blur(var(--panel-blur));
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-3);
+  box-shadow: var(--shadow-1);
+}
+.ms-panel__header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--line-1);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.ms-panel__body {
+  padding: var(--sp-4);
+}
+
+/* ————— HudFrame ————— */
+.ms-hud {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: transparent; /* the aurora shows through */
+}
+.ms-hud__titlebar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: 0 var(--sp-5);
+  height: 66px;
+  border-bottom: 1px solid var(--line-1);
+  background: var(--bg-1);
+  backdrop-filter: blur(var(--panel-blur));
+  flex: none;
+  z-index: 20;
+}
+/* thin animated gradient hairline under the titlebar */
+.ms-hud__titlebar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 66px;
+  height: 1px;
+  background: var(--grad);
+  background-size: 220% 100%;
+  opacity: 0.55;
+  animation: mm-sweep 9s linear infinite;
+  pointer-events: none;
+}
+@keyframes mm-sweep {
+  to {
+    background-position: 220% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ms-hud__titlebar::after {
+    animation: none;
+  }
+}
+.ms-hud__mark {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  font-family: var(--font-mono);
+}
+.ms-hud__app {
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  background: linear-gradient(90deg, var(--accent), var(--flame), var(--gold), var(--accent));
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 10px rgba(var(--accent-rgb), 0.35));
+  animation: mm-sweep 7s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ms-hud__app {
+    animation: none;
+  }
+}
+.ms-hud__sub {
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.ms-hud__spacer {
+  flex: 1;
+}
+.ms-hud__main {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ————— StatusBar ————— */
+.ms-statusbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  height: 30px;
+  padding: 0 var(--sp-5);
+  border-top: 1px solid var(--line-1);
+  background: var(--bg-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--text-2);
+  flex: none;
+  z-index: 20;
+}
+
+/* ————— Buttons ————— */
+.ms-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-5);
+  background: transparent;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-2);
+  color: var(--text-1);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 120ms, background 120ms, box-shadow 120ms;
+}
+.ms-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-line);
+}
+.ms-btn--primary {
+  border-color: var(--accent-line);
+  background: var(--grad-soft);
+  color: var(--text-1);
+}
+.ms-btn--primary:hover {
+  box-shadow:
+    var(--accent-glow),
+    0 0 20px rgba(var(--flame-rgb), 0.25);
+  border-color: var(--accent);
+}
+.ms-btn--danger {
+  border-color: var(--danger);
+  background: var(--danger-dim);
+  color: var(--danger);
+}
+.ms-btn--ghost {
+  border-color: transparent;
+  color: var(--text-2);
+}
+.ms-btn--ghost:hover {
+  color: var(--text-1);
+}
+.ms-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
+}
+.ms-btn--icon {
+  padding: var(--sp-2);
+  width: 42px;
+  height: 42px;
+}
+.ms-btn--active {
+  border-color: var(--accent-line);
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+/* ————— Toggle ————— */
+.ms-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  cursor: pointer;
+  user-select: none;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+}
+.ms-toggle__track {
+  position: relative;
+  width: 48px;
+  height: 25px;
+  border-radius: 13px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  transition: background 120ms, border-color 120ms;
+  flex: none;
+}
+.ms-toggle__thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--text-3);
+  transition: transform 140ms, background 140ms;
+}
+.ms-toggle--on .ms-toggle__track {
+  background: var(--accent-dim);
+  border-color: var(--accent-line);
+}
+.ms-toggle--on .ms-toggle__thumb {
+  transform: translateX(23px);
+  background: var(--accent);
+  box-shadow: var(--accent-glow);
+}
+.ms-toggle--on {
+  color: var(--text-1);
+}
+
+/* ————— Slider ————— */
+.ms-slider {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+.ms-slider__label {
+  flex: none;
+  min-width: 72px;
+}
+.ms-slider input[type='range'] {
+  flex: 1;
+  appearance: none;
+  height: 2px;
+  background: var(--line-2);
+  border-radius: 1px;
+  outline: none;
+  cursor: pointer;
+}
+.ms-slider input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: var(--accent-glow);
+  border: none;
+}
+.ms-slider input[type='range']::-moz-range-thumb {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: var(--accent-glow);
+  border: none;
+}
+.ms-slider__value {
+  flex: none;
+  min-width: 48px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+}
+
+/* ————— SegmentedControl ————— */
+.ms-seg {
+  display: inline-flex;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-2);
+  overflow: hidden;
+}
+.ms-seg__opt {
+  padding: var(--sp-2) var(--sp-5);
+  font-size: var(--fs-sm);
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--line-1);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+.ms-seg__opt:last-child {
+  border-right: none;
+}
+.ms-seg__opt:hover {
+  background: var(--bg-hover);
+}
+.ms-seg__opt--active {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+/* ————— Kbd ————— */
+.ms-kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--text-2);
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-bottom-width: 2px;
+  border-radius: var(--r-1);
+}
+
+/* ————— SearchInput ————— */
+.ms-search {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-2);
+  transition: border-color 120ms, box-shadow 120ms;
+}
+.ms-search:focus-within {
+  border-color: var(--accent-line);
+  box-shadow: var(--accent-glow);
+}
+.ms-search input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  font-size: var(--fs-sm);
+  color: var(--text-1);
+  min-width: 0;
+}
+.ms-search input::placeholder {
+  color: var(--text-3);
+}
+
+/* ————— Toast ————— */
+.ms-toasts {
+  position: fixed;
+  bottom: 44px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  z-index: 300;
+}
+.ms-toast {
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--r-2);
+  font-size: var(--fs-sm);
+  box-shadow: var(--shadow-1);
+  animation: ms-slide-up 160ms ease-out;
+  max-width: 340px;
+}
+.ms-toast--warn {
+  border-left-color: var(--warn);
+}
+.ms-toast--danger {
+  border-left-color: var(--danger);
+}
+
+/* ————— EmptyState ————— */
+.ms-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  padding: var(--sp-6);
+  color: var(--text-3);
+  text-align: center;
+  font-size: var(--fs-sm);
+}
+.ms-empty__title {
+  font-size: var(--fs-md);
+  color: var(--text-2);
+  font-weight: 600;
+}
+
+/* visible focus for keyboard travel */
+.ms-btn:focus-visible,
+.mm-tag:focus-visible,
+.mm-react:focus-visible,
+.mm-card__media:focus-visible,
+.mm-card__title:focus-visible,
+.ms-seg__opt:focus-visible,
+.ms-toggle:focus-visible {
+  outline: 1px solid var(--accent-line);
+  outline-offset: 2px;
+}
