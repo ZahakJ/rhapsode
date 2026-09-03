@@ -53,7 +53,8 @@ export async function makeImageProxy(src: string, out: string, signal?: AbortSig
 
 export async function makeThumb(src: string, out: string, probe: Probe, signal?: AbortSignal): Promise<void> {
   const args = ["-hide_banner", "-nostdin", "-loglevel", "error", "-y"]
-  if (probe.media === "video") args.push("-ss", String(Math.min(1, probe.duration / 3)))
+  // a tenth of the way in, clamped: films open black, phone clips are short
+  if (probe.media === "video") args.push("-ss", String(Math.min(60, Math.max(Math.min(1, probe.duration / 3), probe.duration * 0.1))))
   args.push("-i", src, "-frames:v", "1", "-vf", `scale=-2:${THUMB_HEIGHT},format=yuvj420p`, "-q:v", "4", out)
   await runProc("ffmpeg", args, { timeoutMs: 60_000, signal })
 }

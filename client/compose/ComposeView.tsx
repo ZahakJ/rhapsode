@@ -24,6 +24,10 @@ export function ComposeView() {
   const s = useCompose()
   const verified = useAuth((x) => x.verified)
   const [step, setStep] = useState<Step>("sources")
+  // a new step starts at its top — the "next" button sits at the bottom of the previous one
+  useEffect(() => {
+    document.querySelector(".rh-compose__scroll")?.scrollTo({ top: 0 })
+  }, [step])
   const [keyOpen, setKeyOpen] = useState(false)
   const [render, setRender] = useState<RenderPhase>({ kind: "idle" })
   const [restored, setRestored] = useState(false)
