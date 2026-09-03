@@ -21,13 +21,28 @@ export const sourceIdSchema = z.string().regex(/^[0-9a-f]{24}$/)
 const secs = z.number().finite().min(0).max(4 * 3600)
 const unit = z.number().finite().min(0).max(1)
 
+/** A fractional rectangle of the source's display frame, applied before anything else. */
+export const cropSchema = z
+  .object({ x: unit, y: unit, w: z.number().min(0.05).max(1), h: z.number().min(0.05).max(1) })
+  .refine((c) => c.x + c.w <= 1.0001 && c.y + c.h <= 1.0001, { message: "crop leaves the frame" })
+
+/** Cheap ffmpeg edits, applied after the crop: quarter-turn rotation and a mirror. */
+export const editSchema = z.object({
+  crop: cropSchema.optional(),
+  rotate: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).default(0),
+  flipH: z.boolean().default(false),
+})
+export type Edit = z.infer<typeof editSchema>
+export type Crop = z.infer<typeof cropSchema>
+
 export const baseSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("video"), source: sourceIdSchema, in: secs, out: secs }),
+  z.object({ kind: z.literal("video"), source: sourceIdSchema, in: secs, out: secs, edit: editSchema.optional() }),
   z.object({
     kind: z.literal("image"),
     source: sourceIdSchema,
     // default: the overlay's length
     duration: z.number().positive().max(OUT_MAX_SECONDS).optional(),
+    edit: editSchema.optional(),
   }),
 ])
 
@@ -37,7 +52,20 @@ export const overlaySchema = z.object({
   out: secs,
   /** offset into the OUTPUT timeline where the overlay starts */
   at: secs.default(0),
+  edit: editSchema.optional(),
 })
+
+/** Display dimensions of a source after its edit (crop, then rotation). */
+export function editedDims(src: { width: number; height: number }, edit?: Edit | null): { width: number; height: number } {
+  let w = src.width
+  let h = src.height
+  if (edit?.crop) {
+    w = Math.max(2, Math.floor((w * edit.crop.w) / 2) * 2)
+    h = Math.max(2, Math.floor((h * edit.crop.h) / 2) * 2)
+  }
+  if (edit && (edit.rotate === 90 || edit.rotate === 270)) return { width: h, height: w }
+  return { width: w, height: h }
+}
 
 export const audioSchema = z.object({
   base: z.enum(["keep", "mute", "duck"]).default("duck"),

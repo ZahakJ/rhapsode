@@ -1,4 +1,4 @@
-import { CANVAS, SOURCE_MAX_EDGE, outputDurationOf, type Recipe, type Caption } from "../../shared/recipe.ts"
+import { CANVAS, SOURCE_MAX_EDGE, editedDims, outputDurationOf, type Recipe, type Caption, type Edit } from "../../shared/recipe.ts"
 
 // The one render path. A pure function from a recipe (plus what we know about
 // its sources) to an ffmpeg argv — no fs, no clock, no process — so every
@@ -79,6 +79,24 @@ function fitNoPad(w: number, h: number): string {
 
 const AFORMAT = "aformat=sample_rates=48000:channel_layouts=stereo"
 
+/** crop → rotate → mirror, in source pixels; empty string when there is nothing to do */
+export function editChain(src: { width: number; height: number }, edit: Edit | undefined): string {
+  if (!edit) return ""
+  const parts: string[] = []
+  if (edit.crop) {
+    const cw = Math.max(2, Math.floor((src.width * edit.crop.w) / 2) * 2)
+    const ch = Math.max(2, Math.floor((src.height * edit.crop.h) / 2) * 2)
+    const cx = Math.min(Math.max(0, Math.round(src.width * edit.crop.x)), src.width - cw)
+    const cy = Math.min(Math.max(0, Math.round(src.height * edit.crop.y)), src.height - ch)
+    parts.push(`crop=${cw}:${ch}:${cx}:${cy}`)
+  }
+  if (edit.rotate === 90) parts.push("transpose=1")
+  else if (edit.rotate === 180) parts.push("transpose=1,transpose=1")
+  else if (edit.rotate === 270) parts.push("transpose=2")
+  if (edit.flipH) parts.push("hflip")
+  return parts.length ? parts.join(",") + "," : ""
+}
+
 export function buildArgs(input: BuildInput): BuildOutput {
   const { recipe, jobDir, fontPath, encoder, outPath } = input
   const base = input.sources[recipe.base.source]
@@ -95,7 +113,12 @@ export function buildArgs(input: BuildInput): BuildOutput {
   const ovEnd = at + ovLen
   const fps = recipe.base.kind === "video" ? Math.min(60, Math.max(24, Math.round(base.fps || 30))) : 30
 
-  let { w: W, h: H } = canvasFor(recipe, base)
+  const baseEdit = recipe.base.edit
+  const ovEdit = recipe.overlay.edit
+  const baseDims = editedDims(base, baseEdit)
+  let { w: W, h: H } = canvasFor(recipe, baseDims)
+  const bEdit = editChain(base, baseEdit)
+  const oEdit = editChain(ov, ovEdit)
   const mode = recipe.mode
   const fitMode = recipe.output.fit
 
@@ -123,8 +146,8 @@ export function buildArgs(input: BuildInput): BuildOutput {
     const Lh = vertical ? even(H / 2) : H
     W = vertical ? W : Lw * 2
     H = vertical ? Lh * 2 : H
-    chains.push(`[0:v]setpts=PTS-STARTPTS,${fit(Lw, Lh, fitMode)},setsar=1,fps=${fps}[laneA]`)
-    chains.push(`[1:v]setpts=PTS-STARTPTS,${fitNoPad(Lw, Lh)},setsar=1,fps=${fps},setpts=PTS+${fmt(at)}/TB[ov]`)
+    chains.push(`[0:v]setpts=PTS-STARTPTS,${bEdit}${fit(Lw, Lh, fitMode)},setsar=1,fps=${fps}[laneA]`)
+    chains.push(`[1:v]setpts=PTS-STARTPTS,${oEdit}${fitNoPad(Lw, Lh)},setsar=1,fps=${fps},setpts=PTS+${fmt(at)}/TB[ov]`)
     chains.push(`color=c=black:s=${Lw}x${Lh}:r=${fps}:d=${fmt(D)}[blank]`)
     chains.push(
       `[blank][ov]overlay=x=(W-w)/2:y=(H-h)/2:eof_action=pass:enable='between(t,${fmt(at)},${fmt(ovEnd)})'[laneB]`,
@@ -133,13 +156,13 @@ export function buildArgs(input: BuildInput): BuildOutput {
     chains.push(`${first}${vertical ? "vstack" : "hstack"}[vs]`)
     vOut = "[vs]"
   } else {
-    chains.push(`[0:v]setpts=PTS-STARTPTS,${fit(W, H, fitMode)},setsar=1,fps=${fps}[base]`)
+    chains.push(`[0:v]setpts=PTS-STARTPTS,${bEdit}${fit(W, H, fitMode)},setsar=1,fps=${fps}[base]`)
     if (mode.kind === "pip") {
       const ow = even(W * mode.box.w)
       const x = Math.round(W * mode.box.x)
       const y = Math.round(H * mode.box.y)
       chains.push(
-        `[1:v]setpts=PTS-STARTPTS,scale=w=${ow}:h=-2:flags=bicubic,setsar=1,fps=${fps},setpts=PTS+${fmt(at)}/TB[ov]`,
+        `[1:v]setpts=PTS-STARTPTS,${oEdit}scale=w=${ow}:h=-2:flags=bicubic,setsar=1,fps=${fps},setpts=PTS+${fmt(at)}/TB[ov]`,
       )
       chains.push(
         `[base][ov]overlay=x=${x}:y=${y}:eof_action=pass:enable='between(t,${fmt(at)},${fmt(ovEnd)})'[vp]`,
