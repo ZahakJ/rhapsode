@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Clip a piece of any video, lay it over another — ῥαψῳδός, the song-stitcher",
+  "description": "Clip a piece of any video, lay it over another \u2014 \u1fe5\u03b1\u03c8\u1ff3\u03b4\u03cc\u03c2, the song-stitcher",
   "scripts": {
     "dev": "vite --port 5951 --strictPort",
     "dev:server": "PORT=5950 node --watch --env-file-if-exists=.env server/index.ts",
@@ -15,9 +15,9 @@
     "smoke": "node tools/screenshot.mjs"
   },
   "dependencies": {
-    "@fontsource-variable/inter": "^5.2.5",
-    "@fontsource-variable/jetbrains-mono": "^5.2.5",
     "@fontsource/anton": "^5.2.5",
+    "@fontsource/ibm-plex-mono": "^5.2.5",
+    "@fontsource/ibm-plex-sans": "^5.2.5",
     "@hono/node-server": "^1.14.0",
     "hono": "^4.7.0",
     "react": "^19.1.0",
