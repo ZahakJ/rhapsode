@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rhapsode — the cutting room</title>
+<meta name="description" content="Clip a piece of any video and stitch it onto another. yt-dlp in, one pure recipe→ffmpeg render path out, share links that unfurl. Self-hosted.">
+<meta property="og:title" content="Rhapsode — the cutting room">
+<meta property="og:description" content="Clip a piece of any video and stitch it onto a photo, a clip, or another link. Self-hosted, GPU-rendered, one pure render path.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://zahakj.github.io/rhapsode/assets/og.png">
+<meta name="theme-color" content="#0b0d12">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><rect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%230b0d12%22/><circle cx=%2211%22 cy=%2216%22 r=%225%22 fill=%22%237dd3fc%22/><rect x=%2218%22 y=%2211%22 width=%223%22 height=%2210%22 fill=%22%23ff9f43%22/><rect x=%2223%22 y=%2211%22 width=%223%22 height=%2210%22 fill=%22%23ff9f43%22/></svg>">
+<style>
+  :root{--bg:#0b0d12;--panel:#12151c;--panel2:#171b24;--line:#232833;--line2:#2f3542;--text:#e8ebf0;--text2:#9aa3b2;--text3:#5f6774;--acc:#ff9f43;--ice:#7dd3fc;--mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;--sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif}
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 24px}
+  header{position:sticky;top:0;z-index:5;background:rgba(11,13,18,.88);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .bar{display:flex;align-items:center;gap:18px;height:56px}
+  .mark{font-family:var(--mono);font-weight:600;letter-spacing:.14em;color:var(--acc);display:flex;align-items:center;gap:10px}
+  .mark i{width:9px;height:9px;border-radius:50%;background:var(--ice);box-shadow:0 0 0 3px rgba(125,211,252,.18)}
+  .bar nav{margin-left:auto;display:flex;gap:18px;font-size:14px}
+  .bar nav a{color:var(--text2)}.bar nav a:hover{color:var(--text)}
+  .hero{padding:96px 0 64px;border-bottom:1px solid var(--line)}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ice)}
+  h1{font-size:clamp(40px,7vw,72px);line-height:1.02;margin:14px 0 18px;letter-spacing:-.02em;font-weight:600}
+  h1 span{color:var(--acc)}
+  .lead{font-size:20px;color:var(--text2);max-width:640px;margin:0 0 30px}
+  .cta{display:flex;gap:12px;flex-wrap:wrap}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:11px 18px;border-radius:8px;border:1px solid var(--line2);background:var(--panel);color:var(--text);font-weight:500;font-size:15px}
+  .btn:hover{text-decoration:none;border-color:var(--text3)}
+  .btn.p{background:var(--acc);border-color:var(--acc);color:#1a0e02}
+  .btn code{font-family:var(--mono);font-size:13px}
+  .shot{margin-top:56px;border:1px solid var(--line2);border-radius:12px;overflow:hidden;background:var(--panel);box-shadow:0 30px 80px rgba(0,0,0,.5)}
+  .shot img{display:block;width:100%;height:auto}
+  section{padding:72px 0;border-bottom:1px solid var(--line)}
+  h2{font-size:30px;letter-spacing:-.01em;margin:0 0 8px;font-weight:600}
+  .sub{color:var(--text2);margin:0 0 36px;max-width:640px}
+  .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:22px}
+  .card h3{margin:0 0 8px;font-size:17px;font-weight:600}
+  .card p{margin:0;color:var(--text2);font-size:15px}
+  .k{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--acc);margin-bottom:10px;display:block}
+  .flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}
+  .flow div{padding:20px 22px;border-right:1px solid var(--line)}
+  .flow div:last-child{border-right:0}
+  .flow b{font-family:var(--mono);color:var(--ice);font-size:13px;display:block;margin-bottom:6px}
+  .flow p{margin:0;color:var(--text2);font-size:14px}
+  pre{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:18px 20px;overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--text)}
+  pre .c{color:var(--text3)}pre .a{color:var(--acc)}pre .i{color:var(--ice)}
+  .two{display:grid;grid-template-columns:1.1fr .9fr;gap:36px;align-items:start}
+  @media (max-width:820px){.two{grid-template-columns:1fr}}
+  .phone{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-top:28px}
+  .phone figure{margin:0;border:1px solid var(--line2);border-radius:14px;overflow:hidden;background:var(--panel)}
+  .phone img{display:block;width:100%;height:auto}
+  .phone figcaption{font-family:var(--mono);font-size:12px;color:var(--text2);padding:10px 14px;border-top:1px solid var(--line)}
+  ul.plain{list-style:none;padding:0;margin:0;display:grid;gap:10px}
+  ul.plain li{padding-left:18px;position:relative;color:var(--text2)}
+  ul.plain li::before{content:"";position:absolute;left:0;top:11px;width:8px;height:2px;background:var(--acc)}
+  ul.plain li b{color:var(--text);font-weight:500}
+  .keys{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+  kbd{font-family:var(--mono);font-size:12px;padding:3px 8px;border:1px solid var(--line2);border-bottom-width:2px;border-radius:6px;background:var(--panel2);color:var(--text)}
+  footer{padding:40px 0 60px;color:var(--text3);font-size:14px;font-family:var(--mono)}
+  footer a{color:var(--text2)}
+</style>
+</head>
+<body>
+<header><div class="wrap bar">
+  <span class="mark"><i></i>RHAPSODE</span>
+  <nav><a href="#how">how it works</a><a href="#modes">modes</a><a href="#phone">on the phone</a><a href="#run">run it</a><a href="https://github.com/ZahakJ/rhapsode">github</a></nav>
+</div></header>
+
+<main class="wrap">
+  <div class="hero">
+    <span class="eyebrow">ῥαψῳδός · the song-stitcher</span>
+    <h1>Take a piece of one thing.<br>Lay it on <span>another.</span></h1>
+    <p class="lead">Paste a YouTube link or drop a clip from your phone, cut the seconds you want, and stitch them onto a photo, a clip, or another link — as a dub, a picture-in-picture, or a stack. Render on your own GPU. Share a link that unfurls.</p>
+    <div class="cta">
+      <a class="btn p" href="https://github.com/ZahakJ/rhapsode">Get the source</a>
+      <a class="btn" href="#run"><code>npm run dev</code></a>
+    </div>
+    <div class="shot"><img src="assets/compose.png" alt="The cutting room: sources on the left, the stage and timeline in the centre, the inspector on the right" width="1440" height="900"></div>
+  </div>
+
+  <section id="what">
+    <h2>A cutting room, not a timeline app</h2>
+    <p class="sub">One base, one clip on top, one decision about how they meet. That is the entire model, and it is enough for a song over a video, a headline over a photo, a reaction beside a clip.</p>
+    <div class="grid">
+      <div class="card"><span class="k">sources</span><h3>Anything yt-dlp reads, or your camera roll</h3><p>YouTube, X, TikTok, Instagram, Vimeo. Long videos are fetched as a fifteen-minute window around the moment you point at, never whole. Phone clips stream straight to disk, HEVC and portrait rotation included.</p></div>
+      <div class="card"><span class="k">the cut</span><h3>Frame-honest trimming</h3><p>A playhead you can drive from the keyboard, typed in and out points, and a proxy derived from the same file the render reads — so the seconds you choose are exactly the seconds ffmpeg cuts.</p></div>
+      <div class="card"><span class="k">the render</span><h3>One pure path to ffmpeg</h3><p>The recipe is the only truth. A pure function turns it into a single ffmpeg command, pinned by tests down to the filter strings. NVENC when a GPU answers, libx264 otherwise.</p></div>
+      <div class="card"><span class="k">sharing</span><h3>Links that unfurl, files that travel</h3><p>Every render gets a two-word address with OpenGraph video tags for WhatsApp, Telegram, X and iMessage — plus a plain mp4 download, and a remix door that reopens the recipe.</p></div>
+    </div>
+  </section>
+
+  <section id="how">
+    <h2>How it works</h2>
+    <p class="sub">The browser edits a recipe. The server validates it, renders it, and keeps it with the result so anyone with the key can remix.</p>
+    <div class="flow">
+      <div><b>01 · fetch</b><p>yt-dlp or a streamed upload lands one original per source under a random id.</p></div>
+      <div><b>02 · proxy</b><p>ffmpeg derives a scrub-friendly h264 proxy and a thumbnail from that same file.</p></div>
+      <div><b>03 · recipe</b><p>Cuts, mode, audio, captions, canvas — a zod schema both sides speak.</p></div>
+      <div><b>04 · graph</b><p>A pure function maps the recipe to argv: trims, fits, overlay, mix, drawtext.</p></div>
+      <div><b>05 · render</b><p>One ffmpeg run with live progress over SSE; poster; ffprobe; publish.</p></div>
+    </div>
+    <div class="two" style="margin-top:28px">
+      <pre><span class="c">// shared/recipe.ts — the whole composition</span>
+{
+  base:    { kind: <span class="a">"image"</span>, source: <span class="i">"7a45…"</span> },
+  overlay: { source: <span class="i">"1e0d…"</span>, in: <span class="a">62.0</span>, out: <span class="a">68.5</span>, at: <span class="a">0</span> },
+  mode:    { kind: <span class="a">"dub"</span> },
+  audio:   { base: <span class="a">"duck"</span>, overlay: <span class="a">"keep"</span> },
+  captions:[{ text: <span class="a">"never gonna"</span>, y: <span class="a">0.9</span> }],
+  output:  { aspect: <span class="a">"9:16"</span>, fit: <span class="a">"contain"</span> }
+}</pre>
+      <ul class="plain">
+        <li><b>Never <code>-shortest</code>.</b> Output length is an explicit <code>-t</code>; every audio lane is padded; mixes carry <code>normalize=0</code>.</li>
+        <li><b>Ducking is a real sidechain compressor</b>, not a volume step — the base dips under the clip and recovers.</li>
+        <li><b>Silent files never break the graph.</b> A lane the mode wants but the file lacks is replaced by generated silence.</li>
+        <li><b>Captions go through files,</b> so any text renders; the drawtext option order that ffmpeg 9 quietly requires is pinned by a test.</li>
+        <li><b>Restarts are honest.</b> Whatever was mid-flight is marked failed; the client re-submits.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="modes">
+    <h2>Three ways two things can meet</h2>
+    <p class="sub">Plus captions on any of them, timed if you like.</p>
+    <div class="grid">
+      <div class="card"><span class="k">dub</span><h3>The clip's sound over the base</h3><p>Keep the base's own audio, duck it under the clip, or mute it. The clip's picture is not shown. The classic "this song over this video".</p></div>
+      <div class="card"><span class="k">picture-in-picture</span><h3>The clip in a box you drag</h3><p>Fractional coordinates, resizable from the corner, placed anywhere on a 9:16, 1:1, 16:9 or source-shaped canvas.</p></div>
+      <div class="card"><span class="k">stack</span><h3>Side by side, or one above the other</h3><p>The clip takes the top, bottom, left or right lane, centred on black until its moment comes.</p></div>
+    </div>
+  </section>
+
+  <section id="phone">
+    <div class="two">
+      <div>
+        <h2>Built for the phone in your hand</h2>
+        <p class="sub">Three steps — pieces, cut, compose — sized for thumbs. Paste a link, pick a photo from the camera roll, drag the handles, render. The job keeps going if you switch apps.</p>
+        <ul class="plain">
+          <li><b>Paste anything.</b> An image from the clipboard, a dragged file, a copied link — they land in the right slot.</li>
+          <li><b>Exact times.</b> Type an in and an out point, or step with the arrows and set them at the playhead.</li>
+          <li><b>Live preview.</b> Two media elements kept in step in the browser; the render is the truth.</li>
+        </ul>
+        <div class="keys"><kbd>space</kbd><kbd>←</kbd><kbd>→</kbd><kbd>shift</kbd><kbd>I</kbd><kbd>O</kbd><kbd>home</kbd><kbd>end</kbd><kbd>L</kbd></div>
+      </div>
+      <div class="phone">
+        <figure><img src="assets/phone-cut.png" alt="Trimming a clip on the phone" width="390" height="844"><figcaption>cut</figcaption></figure>
+        <figure><img src="assets/phone-compose.png" alt="Composing on the phone" width="390" height="844"><figcaption>compose</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <section id="run">
+    <h2>Run it yourself</h2>
+    <p class="sub">A single npm package: a Vite + React client, a Hono server that Node runs directly, and a shared recipe schema. Media and a SQLite file live under <code>data/</code>.</p>
+    <pre>git clone https://github.com/ZahakJ/rhapsode && cd rhapsode
+cp .env.example .env        <span class="c"># set INVITE_KEY — viewing is public, creating needs the key</span>
+npm install
+npm run dev:server          <span class="c"># API on :5950</span>
+npm run dev                 <span class="c"># UI on :5951</span></pre>
+    <ul class="plain" style="margin-top:18px">
+      <li><b>Needs</b> Node ≥ 24, ffmpeg / ffprobe, and yt-dlp on the PATH. An NVIDIA GPU is used when present.</li>
+      <li><b>Done bar:</b> <code>npm run typecheck && npm test && npm run build && npm run smoke</code> — the tests render real clips; the smoke drives the whole UI in headless Chromium.</li>
+      <li><b>Deploy:</b> a systemd user unit and a Cloudflare tunnel are in <code>deploy/</code> and the README. The server binds loopback only.</li>
+      <li><b>Honest limits:</b> renders are capped at 180 s; YouTube occasionally serves a session where only 360p survives without a PO-token provider.</li>
+    </ul>
+  </section>
+</main>
+
+<footer class="wrap">
+  RHAPSODE · MIT · <a href="https://github.com/ZahakJ/rhapsode">github.com/ZahakJ/rhapsode</a>
+</footer>
+</body>
+</html>
