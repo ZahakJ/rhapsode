@@ -18,7 +18,10 @@ export function rendersRoutes(store: Store, config: Config, queue: JobQueue, req
     const { recipe, title } = parsed.data
     const problem = crossCheck(store, recipe, config)
     if (problem) return c.json({ error: problem }, 422)
-    if (store.totalBytes() > config.diskCapBytes) return c.json({ error: "the disk is full — delete some renders" }, 507)
+    if (store.totalBytes() > config.diskCapBytes || store.renderBytes() > config.renderCapBytes)
+      return c.json({ error: "the render budget is full — delete some renders first" }, 507)
+    if (queue.pendingCount("render") >= config.maxPendingRenders)
+      return c.json({ error: "too many renders queued — try again in a moment" }, 429)
 
     store.touchSources([recipe.base.source, recipe.overlay.source])
     const slug = store.reserveSlug()

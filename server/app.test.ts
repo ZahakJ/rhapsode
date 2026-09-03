@@ -27,6 +27,7 @@ d("app (integration)", () => {
   let dataDir: string
   let app: ReturnType<typeof createApp>["app"]
   let queue: ReturnType<typeof createApp>["queue"]
+  let db: ReturnType<typeof openDb>
   let baseMp4: Buffer
   let ovMp4: Buffer
   let png: Buffer
@@ -43,7 +44,7 @@ d("app (integration)", () => {
     ovMp4 = fs.readFileSync(`${fx}/ov.mp4`)
     png = fs.readFileSync(`${fx}/img.png`)
     const config = loadConfig({ DATA_DIR: dataDir, INVITE_KEY: KEY, RATE_LIMIT: "0", RENDER_ENCODER: "libx264", PUBLIC_ORIGIN: "https://r.test" })
-    const db = openDb(":memory:")
+    db = openDb(":memory:")
     ;({ app, queue } = createApp(config, db, { encoder: "libx264", ytdlpVersion: "test" }))
   })
 
@@ -207,6 +208,37 @@ d("app (integration)", () => {
     expect((await app.request(`/api/renders/${slug}`)).status).toBe(404)
     expect((await app.request(`/m/${slug}.mp4`)).status).toBe(404)
     expect((await app.request(`/api/sources/${img.id}`, { method: "DELETE", headers: H })).status).toBe(204)
+  })
+
+  it("reports storage and sweeps unreferenced sources on demand", async () => {
+    expect((await app.request("/api/storage")).status).toBe(401)
+    const before = (await (await app.request("/api/storage", { headers: H })).json()) as { usedBytes: number; sources: { count: number; unreferenced: number }; renders: { count: number } }
+    expect(before.usedBytes).toBeGreaterThan(0)
+    expect(before.sources.count).toBeGreaterThan(0)
+    const res = await app.request("/api/storage/sweep", { method: "POST", headers: H })
+    expect(res.status).toBe(200)
+    const after = (await res.json()) as { freedBytes: number; storage: { sources: { unreferenced: number } } }
+    expect(after.storage.sources.unreferenced).toBe(0)
+    // the sources the pip render still references survived
+    expect((await app.request(`/api/sources/${base.id}`, { headers: H })).status).toBe(200)
+    expect((await app.request(`/api/sources/${ov.id}`, { headers: H })).status).toBe(200)
+  })
+
+  it("refuses renders over the budget and over the queue cap", async () => {
+    const recipe = { v: 1, base: { kind: "video", source: base.id, in: 0, out: 1 }, overlay: { source: ov.id, in: 0, out: 1 } }
+    const post = (a: typeof app) =>
+      a.request("/api/renders", { method: "POST", headers: { ...H, "content-type": "application/json" }, body: JSON.stringify({ recipe }) })
+    // same database, a 1-byte render budget: the pip render already on disk trips it
+    const capped = loadConfig({ DATA_DIR: dataDir, INVITE_KEY: KEY, RATE_LIMIT: "0", RENDER_ENCODER: "libx264", RENDER_CAP_BYTES: "1" })
+    expect((await post(createApp(capped, db, { encoder: "libx264" }).app)).status).toBe(507)
+    // a queue that admits nothing
+    const full = loadConfig({ DATA_DIR: dataDir, INVITE_KEY: KEY, RATE_LIMIT: "0", RENDER_ENCODER: "libx264", MAX_PENDING_RENDERS: "1" })
+    const { app: narrow } = createApp(full, db, { encoder: "libx264" })
+    const first = await post(narrow)
+    expect(first.status).toBe(202)
+    expect((await post(narrow)).status).toBe(429)
+    const { job } = (await first.json()) as { job: JobDto }
+    await waitJob(job.id)
   })
 
   it("streams job events over SSE", async () => {

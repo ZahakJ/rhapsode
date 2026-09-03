@@ -196,3 +196,13 @@ export type HealthDto = {
   encoder: string
   ytdlp: string | null
 }
+
+export type StorageDto = {
+  usedBytes: number
+  capBytes: number
+  renderCapBytes: number
+  sources: { count: number; bytes: number; unreferenced: number; unreferencedBytes: number }
+  renders: { count: number; bytes: number }
+  activeJobs: number
+  sourceTtlHours: number
+}

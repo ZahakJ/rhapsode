@@ -179,6 +179,32 @@ export class Store {
       .all() as SourceRow[]
   }
 
+  storageStats(): {
+    sources: { count: number; bytes: number; unreferenced: number; unreferencedBytes: number }
+    renders: { count: number; bytes: number }
+    jobs: { active: number }
+  } {
+    const src = this.db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(bytes),0) AS b FROM sources").get() as { n: number; b: number }
+    const un = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n, COALESCE(SUM(bytes),0) AS b FROM sources s
+         WHERE NOT EXISTS (SELECT 1 FROM render_sources rs WHERE rs.source_id = s.id)`,
+      )
+      .get() as { n: number; b: number }
+    const ren = this.db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(bytes),0) AS b FROM renders").get() as { n: number; b: number }
+    const act = this.db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE status IN ('queued','running')").get() as { n: number }
+    return {
+      sources: { count: src.n, bytes: src.b, unreferenced: un.n, unreferencedBytes: un.b },
+      renders: { count: ren.n, bytes: ren.b },
+      jobs: { active: act.n },
+    }
+  }
+
+  renderBytes(): number {
+    const b = this.db.prepare("SELECT COALESCE(SUM(bytes),0) AS n FROM renders").get() as { n: number }
+    return b.n
+  }
+
   totalBytes(): number {
     const a = this.db.prepare("SELECT COALESCE(SUM(bytes),0) AS n FROM sources").get() as { n: number }
     const b = this.db.prepare("SELECT COALESCE(SUM(bytes),0) AS n FROM renders").get() as { n: number }
