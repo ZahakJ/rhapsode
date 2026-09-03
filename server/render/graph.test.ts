@@ -129,6 +129,24 @@ describe("audio", () => {
   })
 })
 
+describe("edits", () => {
+  it("crops in even source pixels before the fit, then rotates and mirrors", () => {
+    const r = build({ ...dub, base: { kind: "video", source: B, in: 0, out: 5, edit: { crop: { x: 0.25, y: 0.1, w: 0.5, h: 0.5 }, rotate: 90, flipH: true } } })
+    expect(r.filterComplex).toContain("[0:v]setpts=PTS-STARTPTS,crop=960:540:480:108,transpose=1,hflip,scale=")
+    // source canvas follows the cropped, rotated frame: 960x540 turned → 540x960
+    expect(r.width).toBe(540)
+    expect(r.height).toBe(960)
+  })
+  it("crops the overlay before the pip scale", () => {
+    const r = build({ ...dub, overlay: { source: O, in: 0, out: 2, edit: { crop: { x: 0.8, y: 0.8, w: 0.2, h: 0.2 } } }, mode: { kind: "pip", box: { x: 0, y: 0, w: 0.5 } } })
+    expect(r.filterComplex).toContain("[1:v]setpts=PTS-STARTPTS,crop=256:144:1024:576,scale=w=960")
+  })
+  it("emits nothing for an identity edit", () => {
+    const r = build({ ...dub, base: { kind: "video", source: B, in: 0, out: 5, edit: { rotate: 0, flipH: false } } })
+    expect(r.filterComplex).toContain("[0:v]setpts=PTS-STARTPTS,scale=1920")
+  })
+})
+
 describe("captions", () => {
   it("pins the ffmpeg 9 drawtext option order and writes text to files", () => {
     const r = build({ ...dub, captions: [{ text: "hi: there" }, { text: "L", align: "left", x: 0.1, y: 0.2, from: 1, to: 2 }] })

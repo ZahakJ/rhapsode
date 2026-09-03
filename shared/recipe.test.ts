@@ -32,6 +32,8 @@ describe("recipe schema", () => {
     ["caption to <= from", { ...ok, captions: [{ text: "x", from: 2, to: 1 }] }],
     ["unknown mode", { ...ok, mode: { kind: "wipe" } as never }],
     ["bad id", { ...ok, base: { kind: "video", source: "nope", in: 0, out: 1 } }],
+    ["crop leaves the frame", { ...ok, overlay: { source: O, in: 0, out: 5, edit: { crop: { x: 0.6, y: 0, w: 0.5, h: 0.5 } } } }],
+    ["bad rotation", { ...ok, overlay: { source: O, in: 0, out: 5, edit: { rotate: 45 as never } } }],
   ]
   for (const [name, input] of bad) {
     it(`rejects ${name}`, () => {
