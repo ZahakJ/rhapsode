@@ -13,14 +13,12 @@ import { newId, type Store } from "../store.ts"
 import { assertPublicHost, parseSourceUrl, UrlRejected } from "../sources/ssrf.ts"
 import { ytMetadata } from "../sources/url.ts"
 
-const MAX_PENDING_FETCHES = 5
-
 export function sourcesRoutes(store: Store, config: Config, queue: JobQueue): Hono {
   const r = new Hono()
 
   r.post("/", async (c) => {
     if (store.totalBytes() > config.diskCapBytes) return c.json({ error: "the disk is full — delete some renders" }, 507)
-    if (queue.pendingCount("fetch") >= MAX_PENDING_FETCHES) return c.json({ error: "too many fetches in flight, try again shortly" }, 429)
+    if (queue.pendingCount("fetch") >= config.maxPendingFetches) return c.json({ error: "too many fetches in flight, try again shortly" }, 429)
     const type = c.req.header("content-type") ?? ""
     if (type.includes("application/json")) return createFromUrl(c)
     return createFromUpload(c)

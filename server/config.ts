@@ -29,6 +29,10 @@ export type Config = {
   fetchDiskCapBytes: number
   uploadMaxBytes: number
   diskCapBytes: number
+  /** renders alone may not exceed this; sources get the rest */
+  renderCapBytes: number
+  maxPendingRenders: number
+  maxPendingFetches: number
   outMaxS: number
   keepFailedJobs: boolean
   /** hours a source survives unreferenced before the sweep takes it */
@@ -65,7 +69,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     fetchTimeoutMs: num(env.FETCH_TIMEOUT_MS, 15 * 60_000),
     fetchDiskCapBytes: num(env.FETCH_DISK_CAP_BYTES, 3 * 1024 ** 3),
     uploadMaxBytes: num(env.UPLOAD_MAX_BYTES, 512 * 1024 ** 2),
-    diskCapBytes: num(env.DISK_CAP_BYTES, 20 * 1024 ** 3),
+    diskCapBytes: num(env.DISK_CAP_BYTES, 10 * 1024 ** 3),
+    renderCapBytes: num(env.RENDER_CAP_BYTES, 4 * 1024 ** 3),
+    maxPendingRenders: num(env.MAX_PENDING_RENDERS, 8),
+    maxPendingFetches: num(env.MAX_PENDING_FETCHES, 5),
     outMaxS: num(env.OUT_MAX_S, 180),
     keepFailedJobs: env.JOB_KEEP_FAILED === "1",
     sourceTtlHours: num(env.SOURCE_TTL_HOURS, 24 * 7),

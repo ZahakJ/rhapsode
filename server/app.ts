@@ -18,6 +18,7 @@ import { sourcesRoutes } from "./routes/sources.ts"
 import { rendersRoutes } from "./routes/renders.ts"
 import { jobsRoutes } from "./routes/jobs.ts"
 import { mediaRoutes } from "./routes/media.ts"
+import { storageRoutes } from "./routes/storage.ts"
 
 export type AppDeps = {
   encoder: Encoder
@@ -97,6 +98,9 @@ export function createApp(config: Config, db: DatabaseSync, deps: AppDeps): { ap
   app.route("/api/sources", sourcesRoutes(store, config, queue))
   app.route("/api/renders", rendersRoutes(store, config, queue, gate as never))
   app.route("/api/jobs", jobsRoutes(store, queue, gate))
+  app.use("/api/storage", gate)
+  app.use("/api/storage/*", gate)
+  app.route("/api/storage", storageRoutes(store, config))
   app.route("/", mediaRoutes(store, config))
 
   // unmatched /api paths must never fall through to the SPA catch-all below,

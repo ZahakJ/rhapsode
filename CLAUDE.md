@@ -81,6 +81,12 @@ ffmpeg/ffprobe must be on PATH. yt-dlp is only exercised by hand.
   hashing); never `arrayBuffer()` a 500 MB phone clip.
 - A restart fails every queued/running job ("server restarted"); the client
   re-submits. SSE disconnects do **not** cancel a job (phones background tabs).
+- **Disk is somebody's desktop.** Hard ceilings in config: `DISK_CAP_BYTES`
+  (10 GB total media), `RENDER_CAP_BYTES` (4 GB of renders → 507), queue caps
+  (`MAX_PENDING_RENDERS` 8 / `MAX_PENDING_FETCHES` 5 → 429), 512 MB uploads,
+  3 GB per fetch, 180 s renders. Sources unreferenced for 7 d are swept;
+  `POST /api/storage/sweep` clears the cache on demand; `GET /api/storage`
+  reports usage. Renders are only ever deleted explicitly.
 - Rate limiting is in-memory per-IP keyed by `CF-Connecting-IP` (safe only
   because the server binds loopback). `RATE_LIMIT=0` disables.
 - DB schema changes append a rung to `MIGRATIONS` in `server/db.ts`.
