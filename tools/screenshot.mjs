@@ -118,7 +118,7 @@ try {
   await page.getByRole("button", { name: "picture-in-picture" }).click()
   await page.getByRole("button", { name: "+ caption" }).click()
   await page.fill("textarea.rh-textarea", "from the UI")
-  await page.fill('input[placeholder="a title (optional)"]', "ui render")
+  await page.fill('input[placeholder="title (optional)"]', "ui render")
   await page.waitForTimeout(300)
   await page.screenshot({ path: shot("compose-pip") })
   await page.locator(".rh-renderbtn").click()

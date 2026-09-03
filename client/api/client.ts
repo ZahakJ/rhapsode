@@ -5,6 +5,7 @@ import type {
   RenderDto,
   RenderPage,
   SourceDto,
+  StorageDto,
 } from "../../shared/recipe.ts"
 import { useAuth } from "../store/authStore.ts"
 
@@ -120,6 +121,10 @@ export const api = {
     request<RecipeBundle>(`/api/renders/${encodeURIComponent(slug)}/recipe`),
   deleteRender: (slug: string) =>
     request<void>(`/api/renders/${encodeURIComponent(slug)}`, { method: "DELETE" }),
+
+  // ——— storage ———
+  getStorage: () => request<StorageDto>("/api/storage"),
+  sweepStorage: () => request<{ freedBytes: number; storage: StorageDto }>("/api/storage/sweep", { method: "POST" }),
 
   // ——— jobs ———
   getJob: (id: string) => request<JobDto>(`/api/jobs/${encodeURIComponent(id)}`),

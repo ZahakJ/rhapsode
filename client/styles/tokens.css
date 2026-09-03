@@ -1,80 +1,77 @@
-/* Design tokens — the only place raw values live. Color is reserved for
-   meaning: accent = selection/active/the-manipulable-thing, status colors =
-   semantics only. The app claims its accent via <body data-app="…">. */
+/* Design tokens — the only place raw values live. Rhapsode is a cutting
+   room: cool graphite surfaces, hairlines, one accent for the manipulable
+   thing (tangerine) and one for time (ice — playhead, timecodes, readouts).
+   No gradients, no glow, no aurora. */
 :root {
-  /* surfaces — obsidian near-black with a faint charred undertone,
-     slightly translucent so the ember glow bleeds through. */
-  --bg-0: #060404;
-  --bg-1: rgba(19, 13, 11, 0.82);
-  --bg-2: rgba(32, 22, 18, 0.86);
-  --panel: rgba(14, 9, 8, 0.76);
-  /* the one opaque surface: sheets and phone dialogs sit ON the canvas, so
-     they can't be translucent without the meme bleeding through its controls */
-  --sheet: #0d0908;
-  --panel-blur: 8px;
-  --bg-hover: rgba(255, 255, 255, 0.05);
+  /* surfaces */
+  --bg-0: #0b0d12;
+  --bg-1: #12151c;
+  --bg-2: #171b24;
+  --bg-3: #1d222c;
+  --panel: #12151c;
+  --sheet: #12151c;
+  --panel-blur: 0px;
+  --bg-hover: rgba(255, 255, 255, 0.04);
 
-  /* hairlines — neutral; never tinted */
-  --line-1: rgba(255, 255, 255, 0.08);
-  --line-2: rgba(255, 255, 255, 0.14);
+  /* hairlines */
+  --line-1: #232833;
+  --line-2: #2f3542;
 
   /* text */
-  --text-1: #f1ebe6;
-  --text-2: #a89e97;
-  --text-3: #6b615a;
+  --text-1: #e8ebf0;
+  --text-2: #9aa3b2;
+  --text-3: #5f6774;
 
-  /* default accent — overridden by [data-app] below */
-  --accent-rgb: 100, 216, 255;
-
-  /* the supporting cast for gradients: flame + gold — a hot sweep, no purple */
-  --flame-rgb: 255, 168, 74;
-  --gold-rgb: 255, 196, 64;
+  /* the accent — tangerine, the manipulable thing */
+  --accent-rgb: 255, 159, 67;
+  /* time — ice: playhead, timecodes, live readouts. Nothing else. */
+  --ice-rgb: 125, 211, 252;
 
   /* status — semantic only */
-  --ok: #58d5a0;
-  --ok-dim: rgba(88, 213, 160, 0.12);
-  --warn: #f2c14e;
-  --warn-dim: rgba(242, 193, 78, 0.12);
-  --danger: #ff6b6b;
-  --danger-dim: rgba(255, 107, 107, 0.12);
+  --ok: #4ade80;
+  --ok-dim: rgba(74, 222, 128, 0.12);
+  --warn: #fbbf24;
+  --warn-dim: rgba(251, 191, 36, 0.12);
+  --danger: #ff5c5c;
+  --danger-dim: rgba(255, 92, 92, 0.12);
 
-  /* space */
+  /* space — an 8px rhythm with a 4px half-step */
   --sp-1: 4px;
-  --sp-2: 7px;
-  --sp-3: 10px;
-  --sp-4: 14px;
-  --sp-5: 18px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
   --sp-6: 28px;
-  --sp-7: 44px;
-  --sp-8: 68px;
+  --sp-7: 40px;
+  --sp-8: 64px;
 
   /* radii */
-  --r-1: 5px;
-  --r-2: 8px;
-  --r-3: 12px;
+  --r-1: 4px;
+  --r-2: 6px;
+  --r-3: 10px;
 
-  /* type — two sizes up from the family default; memes are not a spreadsheet */
-  --fs-2xs: 12px;
-  --fs-xs: 13px;
-  --fs-sm: 15px;
-  --fs-md: 17px;
-  --fs-lg: 19px;
-  --fs-xl: 24px;
-  --fs-2xl: 34px;
-  --font-ui: 'Inter Variable', 'Segoe UI', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SFMono-Regular', monospace;
-  /* the meme voice — Anton, the open Impact stand-in */
+  /* type */
+  --fs-2xs: 11px;
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 15px;
+  --fs-lg: 17px;
+  --fs-xl: 22px;
+  --fs-2xl: 30px;
+  --font-ui: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  /* captions only */
   --font-display: 'Anton', 'Impact', 'Arial Black', sans-serif;
 
   /* motion */
   --ease: cubic-bezier(0.2, 0.9, 0.3, 1);
-  --dur-control: 120ms;
-  --dur-travel: 250ms;
-  --dur-intro: 400ms;
+  --dur-control: 100ms;
+  --dur-travel: 200ms;
+  --dur-intro: 300ms;
 
-  /* elevation */
-  --shadow-1: 0 8px 32px rgba(0, 0, 0, 0.35);
-  --shadow-2: 0 16px 48px rgba(0, 0, 0, 0.5);
+  /* elevation — soft, for floating things only */
+  --shadow-1: 0 6px 24px rgba(0, 0, 0, 0.35);
+  --shadow-2: 0 14px 40px rgba(0, 0, 0, 0.5);
 
   /* the notch tax — zero everywhere but a phone (needs viewport-fit=cover) */
   --safe-t: env(safe-area-inset-top, 0px);
@@ -82,39 +79,30 @@
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-l: env(safe-area-inset-left, 0px);
 
-  /* phone chrome heights — the tab bar and the titlebar shrink on small glass */
-  --hud-h: 66px;
-  --tabbar-h: 58px;
+  --hud-h: 52px;
+  --tabbar-h: 56px;
 }
 
 /* Derived accent variables live on body — NOT :root — so they compute on the
-   same element the [data-app] --accent-rgb override targets. Declared on
-   :root they would lock in the default before the override applies. */
+   same element the [data-app] --accent-rgb override targets. */
 body {
   --accent: rgb(var(--accent-rgb));
-  --accent-dim: rgba(var(--accent-rgb), 0.12);
-  --accent-line: rgba(var(--accent-rgb), 0.45);
-  --accent-glow: 0 0 12px rgba(var(--accent-rgb), 0.35);
-  --accent-text-glow: 0 0 8px rgba(var(--accent-rgb), 0.45);
+  --accent-dim: rgba(var(--accent-rgb), 0.14);
+  --accent-soft: rgba(var(--accent-rgb), 0.28);
+  --accent-line: rgba(var(--accent-rgb), 0.55);
+  /* kept for components that still reference them: a focus ring, not a glow */
+  --accent-glow: 0 0 0 1px rgba(var(--accent-rgb), 0.35);
+  --accent-text-glow: none;
 
-  --flame: rgb(var(--flame-rgb));
-  --gold: rgb(var(--gold-rgb));
-  /* the signature sweep: blood → flame → gold, fire out of darkness */
-  --grad: linear-gradient(120deg, var(--accent), var(--flame) 55%, var(--gold));
-  --grad-soft: linear-gradient(
-    135deg,
-    rgba(var(--accent-rgb), 0.22),
-    rgba(var(--flame-rgb), 0.15) 55%,
-    rgba(var(--gold-rgb), 0.1)
-  );
+  --ice: rgb(var(--ice-rgb));
+  --ice-dim: rgba(var(--ice-rgb), 0.14);
+  --ice-line: rgba(var(--ice-rgb), 0.5);
 }
 
-/* one accent per instrument — stage coral, the warm spot on a dark stage */
 [data-app='rhapsode'] {
-  --accent-rgb: 255, 122, 89;
+  --accent-rgb: 255, 159, 67;
 }
 
-/* Reduced motion: decorative durations collapse to zero. */
 @media (prefers-reduced-motion: reduce) {
   :root {
     --dur-control: 0ms;

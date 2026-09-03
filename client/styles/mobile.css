@@ -4,23 +4,13 @@
      @media (pointer: coarse)   — TOUCH: fatter handles, 16px inputs. */
 
 @media (max-width: 900px) {
-  body {
-    --hud-h: 52px;
-  }
   .ms-hud__titlebar {
     height: calc(var(--hud-h) + var(--safe-t));
-    padding: var(--safe-t) max(var(--sp-3), var(--safe-r)) 0 max(var(--sp-3), var(--safe-l));
+    padding: var(--safe-t) max(var(--sp-4), var(--safe-r)) 0 max(var(--sp-4), var(--safe-l));
     gap: var(--sp-2);
-  }
-  .ms-hud__titlebar::after {
-    top: calc(var(--hud-h) + var(--safe-t));
   }
   .ms-hud__mark {
     min-width: 0;
-  }
-  .ms-hud__app {
-    font-size: var(--fs-lg);
-    letter-spacing: 0.12em;
   }
   .ms-hud__sub {
     display: none;
@@ -39,7 +29,6 @@
     z-index: 30;
     border-top: 1px solid var(--line-1);
     background: var(--bg-1);
-    backdrop-filter: blur(var(--panel-blur));
     padding: 0 var(--safe-r) var(--safe-b) var(--safe-l);
   }
   .rh-nav--bottom .rh-nav__tab {
@@ -48,18 +37,19 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 2px;
+    gap: 3px;
     height: var(--tabbar-h);
     padding: 0;
     border: none;
     border-radius: 0;
     background: none;
     font-size: var(--fs-2xs);
-    letter-spacing: 0.06em;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
   .rh-nav--bottom .rh-nav__glyph {
     display: block;
-    font-size: 19px;
+    font-size: 18px;
     line-height: 1;
   }
   .rh-nav--bottom .rh-nav__tab--active {
@@ -69,10 +59,9 @@
   .rh-nav--bottom .rh-nav__tab--active::before {
     content: '';
     position: absolute;
-    inset: 0 22% auto;
+    inset: 0 28% auto;
     height: 2px;
-    border-radius: 0 0 2px 2px;
-    background: var(--grad);
+    background: var(--accent);
   }
 
   /* ————— compose: one column + stepper ————— */
@@ -95,12 +84,12 @@
     align-items: center;
     justify-content: center;
     gap: var(--sp-2);
-    height: 46px;
+    height: 44px;
     background: none;
     border: none;
     border-bottom: 2px solid transparent;
-    font-size: var(--fs-sm);
-    letter-spacing: 0.06em;
+    font-size: var(--fs-xs);
+    letter-spacing: 0.1em;
     text-transform: uppercase;
     color: var(--text-3);
   }
@@ -108,11 +97,11 @@
     opacity: 0.4;
   }
   .rh-steps__n {
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
     border: 1px solid var(--line-2);
-    font-size: 11px;
+    font-size: 10px;
     display: grid;
     place-items: center;
   }
@@ -131,25 +120,87 @@
     padding: var(--sp-3) max(var(--sp-3), var(--safe-r)) var(--sp-6) max(var(--sp-3), var(--safe-l));
   }
   .rh-col {
-    gap: var(--sp-4);
-  }
-  .rh-stage {
-    max-height: 52dvh;
-  }
-  .rh-controls__row {
     gap: var(--sp-3);
   }
-  .rh-controls__row > .ms-slider {
-    min-width: 100%;
+  .rh-stage {
+    max-height: 48dvh;
+  }
+  .rh-stage__foot .rh-hint {
+    display: none;
   }
   .rh-srccard__thumb {
     width: 104px;
+    height: 62px;
+  }
+  .rh-picker__drop {
+    display: none;
   }
   .rh-trim__video video {
-    max-height: 34vh;
+    max-height: 32vh;
+  }
+  .rh-trim__keys {
+    display: none;
+  }
+  .rh-trim__transport {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .rh-trim__tgroup {
+    display: flex;
+  }
+  .rh-trim__tgroup .rh-tbtn {
+    flex: 1;
+    height: 40px;
+  }
+  .rh-tf__input {
+    width: 96px;
+  }
+  .rh-trim__tcval {
+    font-size: var(--fs-lg);
+  }
+
+  /* the timeline stacks: readouts above the tracks */
+  .rh-tl {
+    grid-template-columns: 1fr;
+    gap: var(--sp-3);
+    padding: var(--sp-3);
+  }
+  .rh-tl__side {
+    border-right: none;
+    padding-right: 0;
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--sp-3);
+  }
+  .rh-tl__side .rh-tf {
+    flex: none;
+  }
+  .rh-tl__side .rh-tf__input {
+    width: 104px;
+  }
+  .rh-tl__reads {
+    text-align: right;
+  }
+  .rh-tl__body {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  .rh-inspector {
+    background: var(--bg-1);
+    border: 1px solid var(--line-1);
+    border-radius: var(--r-3);
+    padding: var(--sp-4);
+  }
+  .rh-renderbar {
+    position: static;
+    background: none;
+    padding-top: 0;
   }
   .rh-renderbtn {
     flex: 1;
+    height: 44px;
+    font-size: var(--fs-md);
   }
 
   /* ————— result / wall ————— */
@@ -161,15 +212,34 @@
     flex-direction: column;
     gap: var(--sp-4);
   }
+  .rh-result__media video {
+    max-height: 60dvh;
+  }
+  .rh-result__meta {
+    position: static;
+  }
   .rh-result__title {
-    font-size: var(--fs-xl);
+    font-size: var(--fs-lg);
   }
   .rh-wall {
-    padding: var(--sp-3) max(var(--sp-3), var(--safe-r)) var(--sp-6) max(var(--sp-3), var(--safe-l));
+    padding: var(--sp-4) max(var(--sp-3), var(--safe-r)) var(--sp-8) max(var(--sp-3), var(--safe-l));
+  }
+  .rh-wall__head {
+    flex-wrap: wrap;
+  }
+  .rh-storage {
+    flex-basis: 100%;
+    align-items: flex-start;
+  }
+  .rh-storage__text {
+    white-space: normal;
   }
   .rh-grid {
     grid-template-columns: repeat(2, 1fr);
     gap: var(--sp-3);
+  }
+  .rh-card__media {
+    max-height: 240px;
   }
   .rh-card__bar {
     padding: var(--sp-2) var(--sp-3);
@@ -189,6 +259,7 @@
   /* 16px or iOS zooms the whole page the moment a field takes focus */
   .ms-search input,
   .rh-textarea,
+  .rh-tf__input,
   input[type='text'],
   input[type='url'],
   input[type='search'],
@@ -196,15 +267,23 @@
   textarea {
     font-size: 16px;
   }
+  .rh-tf__input {
+    height: 36px;
+  }
+  .rh-trim__bar {
+    height: 44px;
+    margin-left: 14px;
+    margin-right: 14px;
+  }
   .rh-trim__handle {
     width: 28px;
     margin-left: -14px;
   }
   .rh-stage__pipgrip {
-    width: 34px;
-    height: 34px;
-    right: -16px;
-    bottom: -16px;
+    width: 28px;
+    height: 28px;
+    right: -14px;
+    bottom: -14px;
   }
   .ms-slider input[type='range']::-webkit-slider-thumb {
     width: 22px;
@@ -214,9 +293,17 @@
     width: 22px;
     height: 22px;
   }
-  .ms-btn--icon {
-    width: 44px;
-    height: 44px;
+  .ms-btn {
+    height: 40px;
+  }
+  .ms-seg__opt {
+    height: 40px;
+  }
+  .rh-tl__track {
+    height: 34px;
+  }
+  .rh-tl__lab {
+    height: 34px;
   }
   .rh-trim__play--on,
   .rh-stage__play--on {

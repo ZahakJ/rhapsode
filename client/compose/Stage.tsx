@@ -1,36 +1,41 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
-import { CANVAS, type Caption } from "../../shared/recipe.ts"
+import { CANVAS, editedDims, type Caption, type Edit, type SourceDto } from "../../shared/recipe.ts"
 import { useCompose } from "../store/composeStore.ts"
-import { clamp } from "../util/time.ts"
+import { usePreview } from "./previewStore.ts"
+import { clamp, fmtTC } from "../util/time.ts"
 
 /**
  * The preview stage: the output canvas at its aspect, the base underneath,
  * the overlay placed per mode, captions on top — all draggable in fractional
  * coordinates. Two media elements are kept in step by a small clock so the
- * preview plays roughly like the render will. Approximate on purpose.
+ * preview plays roughly like the render will. Approximate on purpose. The
+ * clock lives in previewStore so the timeline can draw and drive it.
  */
 export function Stage() {
   const s = useCompose()
-  const { base, overlay, mode, output, captions, at, ovIn, ovOut, audio } = s
+  const { base, overlay, mode, output, captions, at, ovIn, ovOut, audio, baseEdit, overlayEdit } = s
+  const clock = usePreview((p) => p.clock)
+  const playing = usePreview((p) => p.playing)
+  const setClock = usePreview((p) => p.setClock)
+  const setPlaying = usePreview((p) => p.setPlaying)
+  const register = usePreview((p) => p.register)
   const stageRef = useRef<HTMLDivElement>(null)
   const baseVideo = useRef<HTMLVideoElement>(null)
   const ovVideo = useRef<HTMLVideoElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
-  const [playing, setPlaying] = useState(false)
-  const [clock, setClock] = useState(0)
   const rafRef = useRef<number | null>(null)
   const t0Ref = useRef(0)
 
   const D = s.outputDuration()
   const ovLen = Math.max(0, Math.min(ovOut - ovIn, D - at))
+  const isVideoBase = base?.media === "video"
 
   // canvas aspect
   const canvas = useMemo(() => {
     if (output.aspect !== "source") return CANVAS[output.aspect]
-    const w = base?.width ?? 16
-    const h = base?.height ?? 9
-    return { w, h }
-  }, [output.aspect, base?.width, base?.height])
+    const d = editedDims({ width: base?.width || 16, height: base?.height || 9 }, baseEdit)
+    return { w: d.width, h: d.height }
+  }, [output.aspect, base?.width, base?.height, baseEdit])
 
   // measure the stage box
   useEffect(() => {
@@ -47,36 +52,46 @@ export function Stage() {
   // ——— the clock ———
   // video base: the base <video> is the clock (currentTime - baseIn)
   // image base: a rAF timer from 0..D
-  const isVideoBase = base?.media === "video"
+  const baseInRef = useRef(s.baseIn)
+  baseInRef.current = s.baseIn
+  const DRef = useRef(D)
+  DRef.current = D
 
   useEffect(() => {
     if (!isVideoBase) return
     const v = baseVideo.current
     if (!v) return
-    const onTime = () => {
-      const t = v.currentTime - s.baseIn
-      setClock(t)
-      if (v.currentTime >= s.baseOut - 0.02) {
-        v.currentTime = s.baseIn
-      }
+    let raf: number | null = null
+    const tick = () => {
+      setClock(Math.max(0, v.currentTime - s.baseIn))
+      if (v.currentTime >= s.baseOut - 0.02) v.currentTime = s.baseIn
+      if (!v.paused) raf = requestAnimationFrame(tick)
     }
-    const onPlay = () => setPlaying(true)
-    const onPause = () => setPlaying(false)
-    v.addEventListener("timeupdate", onTime)
+    const onPlay = () => {
+      setPlaying(true)
+      raf = requestAnimationFrame(tick)
+    }
+    const onPause = () => {
+      setPlaying(false)
+      setClock(Math.max(0, v.currentTime - s.baseIn))
+    }
+    const onSeeked = () => setClock(Math.max(0, v.currentTime - s.baseIn))
     v.addEventListener("play", onPlay)
     v.addEventListener("pause", onPause)
+    v.addEventListener("seeked", onSeeked)
     return () => {
-      v.removeEventListener("timeupdate", onTime)
       v.removeEventListener("play", onPlay)
       v.removeEventListener("pause", onPause)
+      v.removeEventListener("seeked", onSeeked)
+      if (raf) cancelAnimationFrame(raf)
     }
-  }, [isVideoBase, s.baseIn, s.baseOut])
+  }, [isVideoBase, s.baseIn, s.baseOut, setClock, setPlaying])
 
   useEffect(() => {
     if (isVideoBase || !playing) return
     const tick = () => {
       const t = (performance.now() - t0Ref.current) / 1000
-      if (t >= D) {
+      if (t >= DRef.current) {
         t0Ref.current = performance.now()
         setClock(0)
       } else setClock(t)
@@ -86,7 +101,51 @@ export function Stage() {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
-  }, [isVideoBase, playing, D])
+  }, [isVideoBase, playing, setClock])
+
+  // the controller the timeline uses
+  useEffect(() => {
+    const seek = (t: number) => {
+      const tt = clamp(t, 0, Math.max(0, DRef.current))
+      if (isVideoBase) {
+        const v = baseVideo.current
+        if (v) v.currentTime = baseInRef.current + tt
+      } else {
+        t0Ref.current = performance.now() - tt * 1000
+      }
+      setClock(tt)
+    }
+    const toggle = () => {
+      if (isVideoBase) {
+        const v = baseVideo.current
+        if (!v) return
+        if (v.paused) {
+          if (v.currentTime < baseInRef.current || v.currentTime >= baseInRef.current + DRef.current - 0.02) v.currentTime = baseInRef.current
+          void v.play().catch(() => {})
+        } else v.pause()
+      } else {
+        const p = usePreview.getState()
+        if (p.playing) setPlaying(false)
+        else {
+          t0Ref.current = performance.now() - p.clock * 1000
+          setPlaying(true)
+        }
+      }
+    }
+    const pause = () => {
+      if (isVideoBase) baseVideo.current?.pause()
+      else setPlaying(false)
+    }
+    register({ seek, toggle, pause })
+    return () => register(null)
+  }, [isVideoBase, register, setClock, setPlaying])
+
+  // stop when the composition changes shape
+  useEffect(() => {
+    setPlaying(false)
+    setClock(0)
+    baseVideo.current?.pause()
+  }, [base?.id, overlay?.id, setPlaying, setClock])
 
   // ——— keep the overlay video in step ———
   const inWindow = clock >= at && clock < at + ovLen
@@ -121,28 +180,11 @@ export function Stage() {
     }
   }, [audio, inWindow])
 
-  const toggle = () => {
-    if (isVideoBase) {
-      const v = baseVideo.current
-      if (!v) return
-      if (v.paused) {
-        if (v.currentTime < s.baseIn || v.currentTime >= s.baseOut) v.currentTime = s.baseIn
-        void v.play().catch(() => {})
-      } else v.pause()
-    } else {
-      if (playing) {
-        setPlaying(false)
-      } else {
-        t0Ref.current = performance.now()
-        setClock(0)
-        setPlaying(true)
-      }
-    }
-  }
+  const toggle = () => usePreview.getState().ctl?.toggle()
 
   // ——— geometry ———
-  const fitStyle: CSSProperties = { objectFit: output.fit === "cover" ? "cover" : "contain" }
-  const ovAspect = overlay && overlay.width && overlay.height ? overlay.width / overlay.height : 16 / 9
+  const ovDims = editedDims({ width: overlay?.width || 16, height: overlay?.height || 9 }, overlayEdit)
+  const ovAspect = ovDims.width / ovDims.height
   const canvasAspect = canvas.w / canvas.h
 
   const pipStyle = (): CSSProperties => {
@@ -220,12 +262,11 @@ export function Stage() {
     return clock >= (c.from ?? 0) && clock <= (c.to ?? 1e9)
   }
 
-  const baseEl = base ? (
+  const baseMedia = base ? (
     base.media === "video" ? (
       <video
         ref={baseVideo}
         className="rh-stage__media"
-        style={fitStyle}
         src={base.proxyUrl ?? undefined}
         playsInline
         preload="metadata"
@@ -234,36 +275,46 @@ export function Stage() {
         }}
       />
     ) : (
-      <img className="rh-stage__media" style={fitStyle} src={base.proxyUrl ?? base.thumbUrl ?? ""} alt="" />
+      <img className="rh-stage__media" src={base.proxyUrl ?? base.thumbUrl ?? ""} alt="" />
     )
-  ) : (
-    <div className="rh-stage__empty">pick a base</div>
-  )
-
-  const ovEl = overlay ? (
-    <video
-      ref={ovVideo}
-      className="rh-stage__media rh-stage__ov"
-      src={overlay.proxyUrl ?? undefined}
-      playsInline
-      preload="metadata"
-      style={{ objectFit: "contain" }}
-    />
   ) : null
+  const baseIn = (box: { w: number; h: number }, fit: "contain" | "cover") =>
+    base ? (
+      <EditedMedia source={base} edit={baseEdit} boxW={box.w} boxH={box.h} fit={fit}>
+        {baseMedia}
+      </EditedMedia>
+    ) : (
+      <div className="rh-stage__empty">pick a base</div>
+    )
+
+  const ovMedia = overlay ? (
+    <video ref={ovVideo} className="rh-stage__media rh-stage__ov" src={overlay.proxyUrl ?? undefined} playsInline preload="metadata" />
+  ) : null
+  const ovIn_ = (box: { w: number; h: number }) =>
+    overlay ? (
+      <EditedMedia source={overlay} edit={overlayEdit} boxW={box.w} boxH={box.h} fit="contain">
+        {ovMedia}
+      </EditedMedia>
+    ) : null
+
+  const stageBox = { w: size.w, h: size.h }
+  const baseEl = baseIn(stageBox, output.fit)
+  const ovEl = ovIn_(mode.kind === "pip" ? { w: size.w * mode.box.w, h: (size.w * mode.box.w) / ovAspect } : stageBox)
 
   let body: React.ReactNode
   if (mode.kind === "stack" && overlay) {
     const vertical = mode.dir === "top" || mode.dir === "bottom"
     const ovFirst = mode.dir === "top" || mode.dir === "left"
+    const lane = vertical ? { w: size.w, h: size.h / 2 } : { w: size.w / 2, h: size.h }
     const lanes = [
-      <div key="a" className="rh-stage__lane">{baseEl}</div>,
-      <div key="b" className={`rh-stage__lane rh-stage__lane--ov${inWindow || !playing ? "" : " rh-stage__lane--dark"}`}>{ovEl}</div>,
+      <div key="a" className="rh-stage__lane">
+        {baseIn(lane, output.fit)}
+      </div>,
+      <div key="b" className={`rh-stage__lane rh-stage__lane--ov${inWindow || !playing ? "" : " rh-stage__lane--dark"}`}>
+        {ovIn_(lane)}
+      </div>,
     ]
-    body = (
-      <div className={`rh-stage__stack rh-stage__stack--${vertical ? "v" : "h"}`}>
-        {ovFirst ? [lanes[1], lanes[0]] : lanes}
-      </div>
-    )
+    body = <div className={`rh-stage__stack rh-stage__stack--${vertical ? "v" : "h"}`}>{ovFirst ? [lanes[1], lanes[0]] : lanes}</div>
   } else {
     body = (
       <>
@@ -299,12 +350,7 @@ export function Stage() {
 
   return (
     <div className="rh-stagewrap">
-      <div
-        ref={stageRef}
-        className="rh-stage"
-        style={{ aspectRatio: `${canvas.w} / ${canvas.h}` }}
-        onClick={() => s.patch({ selectedCaption: null })}
-      >
+      <div ref={stageRef} className="rh-stage" style={{ aspectRatio: `${canvas.w} / ${canvas.h}` }} onClick={() => s.patch({ selectedCaption: null })}>
         {body}
         {captions.map((c, i) => (
           <div
@@ -321,14 +367,77 @@ export function Stage() {
           </div>
         ))}
         {base && (
-          <button className={`rh-stage__play${playing ? " rh-stage__play--on" : ""}`} onClick={(e) => { e.stopPropagation(); toggle() }} aria-label={playing ? "pause preview" : "play preview"}>
+          <button
+            className={`rh-stage__play${playing ? " rh-stage__play--on" : ""}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              toggle()
+            }}
+            aria-label={playing ? "pause preview" : "play preview"}
+          >
             {playing ? "❚❚" : "▶"}
           </button>
         )}
       </div>
       <div className="rh-stage__foot">
-        <span className="mono">{clock.toFixed(1)} / {D.toFixed(1)} s</span>
-        <span className="rh-hint">preview is approximate; the render is truth</span>
+        <span className="rh-stage__tc mono">
+          {fmtTC(clock)} <span className="rh-stage__tcof">/ {fmtTC(D)}</span>
+        </span>
+        <span className="rh-hint">preview is approximate · the render is truth</span>
+      </div>
+    </div>
+  )
+}
+
+
+/**
+ * Places a source inside a box the way the render will: fit the EDITED frame
+ * (crop → rotate → mirror) with contain or cover, then show only the crop
+ * region of the underlying media. Pure CSS; the render is the truth.
+ */
+function EditedMedia({
+  source,
+  edit,
+  boxW,
+  boxH,
+  fit,
+  children,
+}: {
+  source: SourceDto
+  edit: Edit | null
+  boxW: number
+  boxH: number
+  fit: "contain" | "cover"
+  children: React.ReactNode
+}) {
+  if (!boxW || !boxH) return null
+  const srcW = source.width || 16
+  const srcH = source.height || 9
+  const crop = edit?.crop ?? { x: 0, y: 0, w: 1, h: 1 }
+  const rotate = edit?.rotate ?? 0
+  const rot90 = rotate === 90 || rotate === 270
+  const d = editedDims({ width: srcW, height: srcH }, edit)
+  const a = d.width / d.height
+  let fw: number
+  let fh: number
+  const wider = boxW / boxH > a
+  if (fit === "cover" ? !wider : wider) {
+    fh = boxH
+    fw = boxH * a
+  } else {
+    fw = boxW
+    fh = boxW / a
+  }
+  const iw = rot90 ? fh : fw
+  const ih = rot90 ? fw : fh
+  const mw = iw / crop.w
+  const mh = ih / crop.h
+  return (
+    <div className="rh-edited" style={{ width: fw, height: fh, left: (boxW - fw) / 2, top: (boxH - fh) / 2, transform: edit?.flipH ? "scaleX(-1)" : undefined }}>
+      <div className="rh-edited__inner" style={{ width: iw, height: ih, transform: `translate(-50%, -50%) rotate(${rotate}deg)` }}>
+        <div className="rh-edited__media" style={{ width: mw, height: mh, left: -crop.x * mw, top: -crop.y * mh }}>
+          {children}
+        </div>
       </div>
     </div>
   )
