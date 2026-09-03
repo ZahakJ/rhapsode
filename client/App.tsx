@@ -9,8 +9,8 @@ import { Toasts } from "./components/Toasts.tsx"
 
 // `short` and `glyph` are the phone's tab bar; `label` is the desktop titlebar.
 const TABS = [
-  { hash: "#/", label: "Compose", short: "Compose", glyph: "◱", view: "compose" },
-  { hash: "#/wall", label: "The Wall", short: "Wall", glyph: "▦", view: "wall" },
+  { hash: "#/", label: "cut", short: "Cut", glyph: "◫", view: "compose" },
+  { hash: "#/wall", label: "wall", short: "Wall", glyph: "▦", view: "wall" },
 ] as const
 
 function Nav({ route, place }: { route: Route; place: "top" | "bottom" }) {
@@ -46,8 +46,9 @@ export function App() {
     <div className="ms-hud">
       <header className="ms-hud__titlebar">
         <a className="ms-hud__mark" href="#/" onClick={() => navigate("#/")} aria-label="Rhapsode home">
-          <span className="ms-hud__app">Rhapsode</span>
-          <span className="ms-hud__sub">ῥαψῳδός · the song-stitcher</span>
+          <span className="rh-rec" aria-hidden="true" />
+          <span className="ms-hud__app">RHAPSODE</span>
+          <span className="ms-hud__sub">the cutting room</span>
         </a>
         <Nav route={route} place="top" />
         <div className="ms-hud__spacer" />

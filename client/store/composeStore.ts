@@ -3,12 +3,14 @@ import { z } from "zod"
 import {
   audioSchema,
   captionSchema,
+  editSchema,
   modeSchema,
   outputSchema,
   outputDurationOf,
   recipeSchema,
   sourceIdSchema,
   type Caption,
+  type Edit,
   type Recipe,
   type RecipeInput,
   type SourceDto,
@@ -28,6 +30,9 @@ export type ComposeState = {
   overlay: SourceDto | null
   baseIn: number
   baseOut: number
+  /** crop / rotate / mirror per source; null = untouched */
+  baseEdit: Edit | null
+  overlayEdit: Edit | null
   /** image base only; null = follow the clip */
   imageDuration: number | null
   ovIn: number
@@ -64,6 +69,8 @@ const blank = {
   overlay: null,
   baseIn: 0,
   baseOut: 0,
+  baseEdit: null as Edit | null,
+  overlayEdit: null as Edit | null,
   imageDuration: null,
   ovIn: 0,
   ovOut: 0,
@@ -76,6 +83,14 @@ const blank = {
   selectedCaption: null,
 }
 
+/** an edit worth sending: anything beyond the identity */
+export function isRealEdit(e: Edit | null | undefined): boolean {
+  if (!e) return false
+  if (e.rotate !== 0 || e.flipH) return true
+  const c = e.crop
+  return !!c && (c.x > 0.0005 || c.y > 0.0005 || c.w < 0.9995 || c.h < 0.9995)
+}
+
 /** sensible first cut for a freshly picked source: up to 15 s from the start */
 function defaultCut(s: SourceDto): { in: number; out: number } {
   const d = s.duration ?? 0
@@ -86,18 +101,18 @@ export const useCompose = create<ComposeState>()((set, get) => ({
   ...blank,
 
   setBase: (s) => {
-    if (!s) return set({ base: null, baseIn: 0, baseOut: 0, imageDuration: null })
+    if (!s) return set({ base: null, baseIn: 0, baseOut: 0, imageDuration: null, baseEdit: null })
     if (s.media === "video") {
       const c = defaultCut(s)
-      set({ base: s, baseIn: c.in, baseOut: c.out, imageDuration: null, at: 0 })
+      set({ base: s, baseIn: c.in, baseOut: c.out, imageDuration: null, at: 0, baseEdit: null })
     } else {
-      set({ base: s, baseIn: 0, baseOut: 0, imageDuration: null, at: 0 })
+      set({ base: s, baseIn: 0, baseOut: 0, imageDuration: null, at: 0, baseEdit: null })
     }
   },
   setOverlay: (s) => {
-    if (!s) return set({ overlay: null, ovIn: 0, ovOut: 0 })
+    if (!s) return set({ overlay: null, ovIn: 0, ovOut: 0, overlayEdit: null })
     const c = defaultCut(s)
-    set({ overlay: s, ovIn: c.in, ovOut: c.out })
+    set({ overlay: s, ovIn: c.in, ovOut: c.out, overlayEdit: null })
   },
   patch: (p) => set(p),
   setMode: (kind) => {
@@ -137,14 +152,16 @@ export const useCompose = create<ComposeState>()((set, get) => ({
   toRecipe: () => {
     const s = get()
     if (!s.base || !s.overlay) return null
+    const be = isRealEdit(s.baseEdit) ? { edit: s.baseEdit! } : {}
+    const oe = isRealEdit(s.overlayEdit) ? { edit: s.overlayEdit! } : {}
     const base: RecipeInput["base"] =
       s.base.media === "video"
-        ? { kind: "video", source: s.base.id, in: s.baseIn, out: s.baseOut }
-        : { kind: "image", source: s.base.id, ...(s.imageDuration ? { duration: s.imageDuration } : {}) }
+        ? { kind: "video", source: s.base.id, in: s.baseIn, out: s.baseOut, ...be }
+        : { kind: "image", source: s.base.id, ...(s.imageDuration ? { duration: s.imageDuration } : {}), ...be }
     return {
       v: 1,
       base,
-      overlay: { source: s.overlay.id, in: s.ovIn, out: s.ovOut, at: s.at },
+      overlay: { source: s.overlay.id, in: s.ovIn, out: s.ovOut, at: s.at, ...oe },
       mode: s.mode,
       audio: s.audio,
       captions: s.captions,
@@ -162,6 +179,8 @@ export const useCompose = create<ComposeState>()((set, get) => ({
       overlay,
       baseIn: recipe.base.kind === "video" ? recipe.base.in : 0,
       baseOut: recipe.base.kind === "video" ? recipe.base.out : 0,
+      baseEdit: recipe.base.edit ?? null,
+      overlayEdit: recipe.overlay.edit ?? null,
       imageDuration: recipe.base.kind === "image" ? (recipe.base.duration ?? null) : null,
       ovIn: recipe.overlay.in,
       ovOut: recipe.overlay.out,
@@ -183,6 +202,8 @@ const draftSchema = z.object({
   overlayId: sourceIdSchema.nullable(),
   baseIn: z.number(),
   baseOut: z.number(),
+  baseEdit: editSchema.nullable().default(null),
+  overlayEdit: editSchema.nullable().default(null),
   imageDuration: z.number().nullable(),
   ovIn: z.number(),
   ovOut: z.number(),
@@ -202,6 +223,8 @@ export function saveDraft(): void {
     overlayId: s.overlay?.id ?? null,
     baseIn: s.baseIn,
     baseOut: s.baseOut,
+    baseEdit: s.baseEdit,
+    overlayEdit: s.overlayEdit,
     imageDuration: s.imageDuration,
     ovIn: s.ovIn,
     ovOut: s.ovOut,
@@ -247,6 +270,8 @@ export function applyDraft(draft: Draft, base: SourceDto | null, overlay: Source
     baseIn: base?.media === "video" ? clamp(draft.baseIn, 0, base.duration ?? 0) : 0,
     baseOut: base?.media === "video" ? clamp(draft.baseOut, 0, base.duration ?? 0) : 0,
     imageDuration: base?.media === "image" ? draft.imageDuration : null,
+    baseEdit: base ? draft.baseEdit : null,
+    overlayEdit: overlay ? draft.overlayEdit : null,
     ovIn: overlay ? clamp(draft.ovIn, 0, overlay.duration ?? 0) : 0,
     ovOut: overlay ? clamp(draft.ovOut, 0, overlay.duration ?? 0) : 0,
     at: draft.at,

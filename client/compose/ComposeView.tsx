@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import type { JobDto, RenderDto, SourceDto } from "../../shared/recipe.ts"
 import { MAX_CAPTIONS, OUT_MAX_SECONDS } from "../../shared/recipe.ts"
 import { api } from "../api/client.ts"
+import { stageLabel, watchJob } from "../api/jobs.ts"
 import { useAuth } from "../store/authStore.ts"
 import { useCompose, saveDraft, readDraft, applyDraft, clearDraft, validateRecipe } from "../store/composeStore.ts"
 import { toast } from "../components/Toasts.tsx"
@@ -11,10 +12,12 @@ import { usePhone } from "../usePhone.ts"
 import { SourcePicker } from "./SourcePicker.tsx"
 import { Trimmer } from "./Trimmer.tsx"
 import { Stage } from "./Stage.tsx"
-import { JobProgress } from "./JobProgress.tsx"
-import { clamp, fmtTime, round1 } from "../util/time.ts"
+import { Timeline } from "./Timeline.tsx"
+import { useIngest, isHttpUrl, routeFile, routeUrl } from "./ingestStore.ts"
+import { clamp, fmtTime, isTyping, round1 } from "../util/time.ts"
 
 type Step = "sources" | "cut" | "compose"
+type RenderPhase = { kind: "idle" } | { kind: "submitting" } | { kind: "job"; job: JobDto; slug: string; stage: string | null; progress: number | null }
 
 export function ComposeView() {
   const phone = usePhone()
@@ -22,7 +25,7 @@ export function ComposeView() {
   const verified = useAuth((x) => x.verified)
   const [step, setStep] = useState<Step>("sources")
   const [keyOpen, setKeyOpen] = useState(false)
-  const [renderJob, setRenderJob] = useState<{ job: JobDto; slug: string } | null>(null)
+  const [render, setRender] = useState<RenderPhase>({ kind: "idle" })
   const [restored, setRestored] = useState(false)
 
   // restore a draft once, only if its sources still exist server-side
@@ -48,10 +51,40 @@ export function ComposeView() {
     return unsub
   }, [])
 
+  // ——— paste anywhere: files go to a slot, links go to the empty slot ———
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const dt = e.clipboardData
+      if (!dt) return
+      const file = Array.from(dt.files).find((f) => f.type.startsWith("image/") || f.type.startsWith("video/"))
+      if (file) {
+        e.preventDefault()
+        const slot = routeFile(file)
+        if (!slot) return
+        toast(`pasted ${file.type.startsWith("image/") ? "an image" : "a video"} into ${slot === "base" ? "A · the base" : "B · the clip"}`)
+        void useIngest.getState().ingestFile(slot, file)
+        return
+      }
+      if (isTyping(e.target)) return
+      const text = dt.getData("text/plain").trim()
+      if (!text || !isHttpUrl(text)) return
+      const slot = routeUrl()
+      if (!slot) {
+        toast("both slots are full — swap one first", "warn")
+        return
+      }
+      e.preventDefault()
+      toast(`fetching that link into ${slot === "base" ? "A · the base" : "B · the clip"}`)
+      void useIngest.getState().ingestUrl(slot, text)
+    }
+    document.addEventListener("paste", onPaste)
+    return () => document.removeEventListener("paste", onPaste)
+  }, [])
+
   const ready = !!s.base && !!s.overlay
   const D = s.outputDuration()
 
-  const render = async () => {
+  const startRender = async () => {
     if (!verified) {
       setKeyOpen(true)
       return
@@ -61,26 +94,52 @@ export function ComposeView() {
       toast(v.error, "warn")
       return
     }
+    setRender({ kind: "submitting" })
     try {
       const res = await api.createRender(v.recipe, s.title.trim() || undefined)
-      setRenderJob(res)
+      setRender({ kind: "job", job: res.job, slug: res.slug, stage: null, progress: null })
     } catch (e) {
       toast(e instanceof Error ? e.message : "render failed", "danger")
+      setRender({ kind: "idle" })
     }
   }
 
-  const onRendered = (result: unknown) => {
-    const r = result as RenderDto | undefined
-    const slug = r?.slug ?? renderJob?.slug
-    setRenderJob(null)
-    clearDraft()
-    if (slug) navigate(`#/r/${encodeURIComponent(slug)}`)
-  }
+  // follow the render job
+  useEffect(() => {
+    if (render.kind !== "job") return
+    const slug = render.slug
+    const stop = watchJob(render.job.id, (ev) => {
+      if (ev.type === "progress") setRender((r) => (r.kind === "job" ? { ...r, stage: ev.stage, progress: ev.progress } : r))
+      else if (ev.type === "state") setRender((r) => (r.kind === "job" ? { ...r, stage: ev.job.stage, progress: ev.job.progress } : r))
+      else if (ev.type === "done") {
+        const out = ev.result as RenderDto | undefined
+        setRender({ kind: "idle" })
+        clearDraft()
+        navigate(`#/r/${encodeURIComponent(out?.slug ?? slug)}`)
+      } else {
+        toast(ev.error, "danger")
+        setRender({ kind: "idle" })
+      }
+    })
+    return stop
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [render.kind === "job" ? render.job.id : null])
+
+  const missing = !s.base ? "pick a base (A)" : !s.overlay ? "pick the clip on top (B)" : D <= 0 ? "the base cut is empty" : D > OUT_MAX_SECONDS ? `renders are capped at ${OUT_MAX_SECONDS}s` : null
+
+  const renderLabel =
+    render.kind === "submitting"
+      ? "queued…"
+      : render.kind === "job"
+        ? `${stageLabel(render.stage, "render")}${render.progress !== null ? ` ${Math.round(render.progress * 100)}%` : "…"}`
+        : verified
+          ? "render"
+          : "render · needs the key"
 
   const sourcesPanel = (
     <div className="rh-col">
-      <SourcePicker slot="base" source={s.base} onSource={(x) => s.setBase(x)} allowImage />
-      <SourcePicker slot="overlay" source={s.overlay} onSource={(x) => s.setOverlay(x)} allowImage={false} />
+      <SourcePicker slot="base" source={s.base} onSource={(x) => s.setBase(x)} allowImage edit={s.baseEdit} onEdit={(e) => s.patch({ baseEdit: e })} />
+      <SourcePicker slot="overlay" source={s.overlay} onSource={(x) => s.setOverlay(x)} allowImage={false} edit={s.overlayEdit} onEdit={(e) => s.patch({ overlayEdit: e })} />
       {phone && ready && (
         <button className="ms-btn ms-btn--primary rh-next" onClick={() => setStep("cut")}>
           next — cut the pieces →
@@ -96,18 +155,18 @@ export function ComposeView() {
           source={s.base}
           inT={s.baseIn}
           outT={s.baseOut}
-          onChange={(a, b) => s.patch({ baseIn: a, baseOut: b, at: clamp(s.at, 0, Math.max(0, b - a - 0.1)) })}
-          label="the base"
+          onChange={(a, b) => s.patch({ baseIn: a, baseOut: b, at: clamp(s.at, 0, Math.max(0, round1(b - a - 0.1))) })}
+          label="A · base"
         />
       )}
       {s.base?.media === "image" && s.overlay && (
-        <div className="rh-field">
+        <div className="rh-field rh-panel">
           <label className="rh-field__label">the photo stays up for</label>
           <div className="rh-row">
             <div className="ms-search rh-grow">
               <input
                 inputMode="decimal"
-                placeholder={`${fmtTime(s.ovOut - s.ovIn)} (the clip's length)`}
+                placeholder={`${fmtTime(s.ovOut - s.ovIn)} — the clip's length`}
                 value={s.imageDuration ?? ""}
                 onChange={(e) => {
                   const n = Number(e.target.value)
@@ -125,7 +184,7 @@ export function ComposeView() {
           inT={s.ovIn}
           outT={s.ovOut}
           onChange={(a, b) => s.patch({ ovIn: a, ovOut: b })}
-          label="the clip on top"
+          label="B · clip"
           hint={s.mode.kind === "dub" ? "dub uses only this clip's sound; its picture is not shown" : undefined}
         />
       )}
@@ -137,44 +196,38 @@ export function ComposeView() {
     </div>
   )
 
-  const composePanel = (
-    <div className="rh-col">
-      <Stage />
-      <Controls />
-      <div className="rh-renderbar">
-        <div className="ms-search rh-grow">
-          <input
-            placeholder="a title (optional)"
-            value={s.title}
-            maxLength={120}
-            onChange={(e) => s.patch({ title: e.target.value })}
-          />
-        </div>
-        <button
-          className="ms-btn ms-btn--primary rh-renderbtn"
-          disabled={!ready || !!renderJob || D <= 0 || D > OUT_MAX_SECONDS}
-          onClick={() => void render()}
-        >
-          {verified ? "render ◈" : "render — needs the key"}
-        </button>
+  const renderBar = (
+    <div className="rh-renderbar">
+      <div className="ms-search rh-grow">
+        <input placeholder="title (optional)" value={s.title} maxLength={120} onChange={(e) => s.patch({ title: e.target.value })} />
       </div>
-      {renderJob && (
-        <div className="rh-renderjob ms-panel">
-          <div className="ms-panel__body">
-            <JobProgress
-              job={renderJob.job}
-              onDone={onRendered}
-              onFail={(err) => {
-                toast(err, "danger")
-                setRenderJob(null)
-              }}
-            />
+      <button
+        className={`ms-btn ms-btn--primary rh-renderbtn${render.kind !== "idle" ? " rh-renderbtn--busy" : ""}`}
+        disabled={!ready || render.kind !== "idle" || !!missing}
+        onClick={() => void startRender()}
+        title={missing ?? undefined}
+      >
+        {render.kind === "job" && <span className="rh-renderbtn__bar" style={{ width: `${Math.round((render.progress ?? 0) * 100)}%` }} />}
+        <span className="rh-renderbtn__label">{renderLabel}</span>
+      </button>
+    </div>
+  )
+
+  const stagePanel = (
+    <div className="rh-col rh-center">
+      <Stage />
+      <Timeline />
+      {missing && ready && <p className="rh-hint rh-missing">{missing}</p>}
+      {phone && (
+        <>
+          <Inspector />
+          {renderBar}
+          {render.kind === "job" && (
             <p className="rh-hint">
-              you can leave this screen — the render finishes on its own; it will appear on the wall as{" "}
-              <span className="mono">{renderJob.slug}</span>
+              you can leave this screen — the render finishes on its own and lands on the wall as <span className="mono">{render.slug}</span>
             </p>
-          </div>
-        </div>
+          )}
+        </>
       )}
     </div>
   )
@@ -184,12 +237,7 @@ export function ComposeView() {
       <div className="rh-compose rh-compose--phone">
         <div className="rh-steps">
           {(["sources", "cut", "compose"] as Step[]).map((k, i) => (
-            <button
-              key={k}
-              className={`rh-steps__tab${step === k ? " rh-steps__tab--active" : ""}`}
-              disabled={k !== "sources" && !ready}
-              onClick={() => setStep(k)}
-            >
+            <button key={k} className={`rh-steps__tab${step === k ? " rh-steps__tab--active" : ""}`} disabled={k !== "sources" && !ready} onClick={() => setStep(k)}>
               <span className="rh-steps__n mono">{i + 1}</span>
               {k === "sources" ? "pieces" : k === "cut" ? "cut" : "compose"}
             </button>
@@ -198,7 +246,7 @@ export function ComposeView() {
         <div className="rh-compose__scroll">
           {step === "sources" && sourcesPanel}
           {step === "cut" && cutPanel}
-          {step === "compose" && composePanel}
+          {step === "compose" && stagePanel}
         </div>
         {keyOpen && <InviteKeyDialog onClose={() => setKeyOpen(false)} />}
       </div>
@@ -206,30 +254,69 @@ export function ComposeView() {
   }
 
   return (
-    <div className="rh-compose">
-      <div className="rh-compose__left">
+    <div className="rh-editor">
+      <aside className="rh-editor__rail">
         {sourcesPanel}
         {ready && cutPanel}
-      </div>
-      <div className="rh-compose__right">
+      </aside>
+      <section className="rh-editor__center">
         {ready ? (
-          composePanel
+          <>
+            {stagePanel}
+            {render.kind === "job" && (
+              <p className="rh-hint rh-center__note">
+                you can leave this screen — the render finishes on its own and lands on the wall as <span className="mono">{render.slug}</span>
+              </p>
+            )}
+          </>
         ) : (
-          <div className="ms-empty rh-compose__empty">
-            <div className="rh-compose__glyph">🎼</div>
-            <div className="ms-empty__title">stitch a piece of one thing onto another</div>
-            <div>pick a base and a clip on the left; cut them; lay one over the other; render; share the link.</div>
+          <EmptyEditor hasBase={!!s.base} />
+        )}
+      </section>
+      <aside className="rh-editor__inspector">
+        {ready ? (
+          <>
+            <Inspector />
+            {renderBar}
+          </>
+        ) : (
+          <div className="rh-inspector__empty">
+            <div className="rh-inspector__emptytitle">inspector</div>
+            <p className="rh-hint">mode, canvas, sound and captions appear here once both pieces are in.</p>
           </div>
         )}
-      </div>
+      </aside>
       {keyOpen && <InviteKeyDialog onClose={() => setKeyOpen(false)} />}
     </div>
   )
 }
 
-function Seg<T extends string>({ value, options, onChange, label }: { value: T; options: { v: T; l: string }[]; onChange: (v: T) => void; label?: string }) {
+function EmptyEditor({ hasBase }: { hasBase: boolean }) {
   return (
-    <div className="rh-seg" role="group" aria-label={label}>
+    <div className="rh-empty">
+      <div className="rh-empty__frame">
+        <div className="rh-empty__mark mono">A ▸ B</div>
+        <div className="rh-empty__title">{hasBase ? "now the clip on top" : "stitch a piece of one thing onto another"}</div>
+        <ol className="rh-empty__steps">
+          <li>
+            <b>A</b> the base — a photo, a clip, or a link
+          </li>
+          <li>
+            <b>B</b> the piece on top — a song, a line, a moment
+          </li>
+          <li>cut both, place the clip on the timeline, render</li>
+        </ol>
+        <p className="rh-hint">
+          paste a link or an image anywhere on this page · drop files on a slot · <span className="mono">⌘V</span>
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function Seg<T extends string>({ value, options, onChange, label, block }: { value: T; options: { v: T; l: string }[]; onChange: (v: T) => void; label?: string; block?: boolean }) {
+  return (
+    <div className={`rh-seg${block ? " rh-seg--block" : ""}`} role="group" aria-label={label}>
       {label && <span className="rh-seg__label">{label}</span>}
       <div className="ms-seg">
         {options.map((o) => (
@@ -252,7 +339,7 @@ function Range({ label, value, min, max, step, onChange, fmt }: { label: string;
   )
 }
 
-function Controls() {
+function Inspector() {
   const s = useCompose()
   const D = s.outputDuration()
   const baseIsVideo = s.base?.media === "video"
@@ -260,39 +347,52 @@ function Controls() {
   const cap = sel !== null ? s.captions[sel] : undefined
 
   return (
-    <div className="rh-controls">
-      <Seg
-        label="mode"
-        value={s.mode.kind}
-        onChange={(k) => s.setMode(k)}
-        options={[
-          { v: "dub", l: "dub" },
-          { v: "pip", l: "picture-in-picture" },
-          { v: "stack", l: "stack" },
-        ]}
-      />
-      {s.mode.kind === "stack" && (
+    <div className="rh-inspector">
+      <div className="rh-insp">
+        <div className="rh-insp__title">mode</div>
         <Seg
-          label="clip goes"
-          value={s.mode.dir}
-          onChange={(dir) => s.patch({ mode: { kind: "stack", dir } })}
+          block
+          value={s.mode.kind}
+          onChange={(k) => s.setMode(k)}
           options={[
-            { v: "top", l: "top" },
-            { v: "bottom", l: "bottom" },
-            { v: "left", l: "left" },
-            { v: "right", l: "right" },
+            { v: "dub", l: "dub" },
+            { v: "pip", l: "picture-in-picture" },
+            { v: "stack", l: "stack" },
           ]}
         />
-      )}
-      {s.mode.kind === "pip" && (
-        <Range label="box width" value={s.mode.box.w} min={0.1} max={1} step={0.01}
-          onChange={(w) => s.mode.kind === "pip" && s.patch({ mode: { kind: "pip", box: { ...s.mode.box, w: clamp(w, 0.1, 1 - s.mode.box.x) } } })}
-          fmt={(v) => `${Math.round(v * 100)}%`} />
-      )}
+        {s.mode.kind === "stack" && (
+          <Seg
+            block
+            label="clip goes"
+            value={s.mode.dir}
+            onChange={(dir) => s.patch({ mode: { kind: "stack", dir } })}
+            options={[
+              { v: "top", l: "top" },
+              { v: "bottom", l: "bottom" },
+              { v: "left", l: "left" },
+              { v: "right", l: "right" },
+            ]}
+          />
+        )}
+        {s.mode.kind === "pip" && (
+          <Range
+            label="box width"
+            value={s.mode.box.w}
+            min={0.1}
+            max={1}
+            step={0.01}
+            onChange={(w) => s.mode.kind === "pip" && s.patch({ mode: { kind: "pip", box: { ...s.mode.box, w: clamp(w, 0.1, 1 - s.mode.box.x) } } })}
+            fmt={(v) => `${Math.round(v * 100)}%`}
+          />
+        )}
+        {s.mode.kind === "dub" && <p className="rh-hint">the clip's sound over the base; its picture stays hidden</p>}
+        {s.mode.kind === "pip" && <p className="rh-hint">drag the box on the stage; the corner grip resizes it</p>}
+      </div>
 
-      <div className="rh-controls__row">
+      <div className="rh-insp">
+        <div className="rh-insp__title">canvas</div>
         <Seg
-          label="canvas"
+          block
           value={s.output.aspect}
           onChange={(aspect) => s.patch({ output: { ...s.output, aspect } })}
           options={[
@@ -303,31 +403,22 @@ function Controls() {
           ]}
         />
         <Seg
+          block
           label="fit"
           value={s.output.fit}
           onChange={(fit) => s.patch({ output: { ...s.output, fit } })}
           options={[
-            { v: "contain", l: "contain" },
-            { v: "cover", l: "cover" },
+            { v: "contain", l: "contain · pad" },
+            { v: "cover", l: "cover · crop" },
           ]}
         />
       </div>
 
-      {D > 0 && (
-        <Range
-          label="clip starts at"
-          value={s.at}
-          min={0}
-          max={Math.max(0, round1(D - 0.1))}
-          step={0.1}
-          onChange={(v) => s.patch({ at: round1(v) })}
-          fmt={(v) => `${fmtTime(v)} s`}
-        />
-      )}
-
-      <div className="rh-controls__row">
+      <div className="rh-insp">
+        <div className="rh-insp__title">sound</div>
         <Seg
-          label="base sound"
+          block
+          label="base"
           value={s.audio.base}
           onChange={(base) => s.patch({ audio: { ...s.audio, base } })}
           options={[
@@ -337,7 +428,8 @@ function Controls() {
           ]}
         />
         <Seg
-          label="clip sound"
+          block
+          label="clip"
           value={s.audio.overlay}
           onChange={(overlay) => s.patch({ audio: { ...s.audio, overlay } })}
           options={[
@@ -345,21 +437,20 @@ function Controls() {
             { v: "mute", l: "mute" },
           ]}
         />
-      </div>
-      {!baseIsVideo && s.audio.base !== "mute" && <p className="rh-hint">a photo has no sound of its own; base sound applies to video bases</p>}
-      <div className="rh-controls__row">
+        {!baseIsVideo && s.audio.base !== "mute" && <p className="rh-hint">a photo has no sound; base sound applies to video bases</p>}
         <Range label="base gain" value={s.audio.baseGain} min={0} max={2} step={0.05} onChange={(v) => s.patch({ audio: { ...s.audio, baseGain: v } })} fmt={(v) => `${Math.round(v * 100)}%`} />
         <Range label="clip gain" value={s.audio.overlayGain} min={0} max={2} step={0.05} onChange={(v) => s.patch({ audio: { ...s.audio, overlayGain: v } })} fmt={(v) => `${Math.round(v * 100)}%`} />
       </div>
 
-      <div className="rh-caps">
-        <div className="rh-caps__head">
-          <span className="rh-seg__label">captions</span>
-          <button className="ms-btn" disabled={s.captions.length >= MAX_CAPTIONS} onClick={() => s.addCaption()}>
+      <div className="rh-insp">
+        <div className="rh-insp__head">
+          <div className="rh-insp__title">captions</div>
+          <button className="ms-btn ms-btn--small" disabled={s.captions.length >= MAX_CAPTIONS} onClick={() => s.addCaption()}>
             + caption
           </button>
         </div>
-        {s.captions.length > 0 && (
+        {s.captions.length === 0 && <p className="rh-hint">bold outlined text, dragged into place on the stage</p>}
+        {s.captions.length > 1 && (
           <div className="rh-caps__list">
             {s.captions.map((c, i) => (
               <button key={i} className={`rh-caps__item${sel === i ? " rh-caps__item--sel" : ""}`} onClick={() => s.patch({ selectedCaption: i })}>
@@ -370,34 +461,26 @@ function Controls() {
         )}
         {cap && sel !== null && (
           <div className="rh-caps__edit">
-            <textarea
-              className="rh-textarea"
-              rows={2}
-              maxLength={200}
-              value={cap.text}
-              onChange={(e) => s.updateCaption(sel, { text: e.target.value })}
+            <textarea className="rh-textarea" rows={2} maxLength={200} value={cap.text} onChange={(e) => s.updateCaption(sel, { text: e.target.value })} />
+            <Range label="size" value={cap.size} min={0.02} max={0.2} step={0.005} onChange={(v) => s.updateCaption(sel, { size: v })} fmt={(v) => `${Math.round(v * 100)}%`} />
+            <Seg
+              block
+              label="align"
+              value={cap.align}
+              onChange={(align) => s.updateCaption(sel, { align })}
+              options={[
+                { v: "left", l: "left" },
+                { v: "center", l: "center" },
+                { v: "right", l: "right" },
+              ]}
             />
-            <div className="rh-controls__row">
-              <Range label="size" value={cap.size} min={0.02} max={0.2} step={0.005} onChange={(v) => s.updateCaption(sel, { size: v })} fmt={(v) => `${Math.round(v * 100)}%`} />
-              <Seg
-                value={cap.align}
-                onChange={(align) => s.updateCaption(sel, { align })}
-                options={[
-                  { v: "left", l: "left" },
-                  { v: "center", l: "center" },
-                  { v: "right", l: "right" },
-                ]}
-              />
-            </div>
-            <div className="rh-controls__row">
-              <Range label="from" value={cap.from ?? 0} min={0} max={Math.max(0, round1(D))} step={0.1} onChange={(v) => s.updateCaption(sel, { from: v === 0 ? undefined : round1(v) })} fmt={(v) => `${fmtTime(v)}`} />
-              <Range label="to" value={cap.to ?? round1(D)} min={0} max={Math.max(0, round1(D))} step={0.1} onChange={(v) => s.updateCaption(sel, { to: v >= D ? undefined : round1(v) })} fmt={(v) => `${fmtTime(v)}`} />
-            </div>
-            <div className="rh-row">
-              <button className="ms-btn ms-btn--danger" onClick={() => s.removeCaption(sel)}>
+            <Range label="from" value={cap.from ?? 0} min={0} max={Math.max(0, round1(D))} step={0.1} onChange={(v) => s.updateCaption(sel, { from: v === 0 ? undefined : round1(v) })} fmt={(v) => fmtTime(v)} />
+            <Range label="to" value={cap.to ?? round1(D)} min={0} max={Math.max(0, round1(D))} step={0.1} onChange={(v) => s.updateCaption(sel, { to: v >= D ? undefined : round1(v) })} fmt={(v) => fmtTime(v)} />
+            <div className="rh-row rh-row--between">
+              <span className="rh-hint">drag the text on the stage to place it</span>
+              <button className="ms-btn ms-btn--small ms-btn--danger" onClick={() => s.removeCaption(sel)}>
                 remove
               </button>
-              <span className="rh-hint">drag the text on the stage to place it</span>
             </div>
           </div>
         )}

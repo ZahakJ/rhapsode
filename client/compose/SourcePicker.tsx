@@ -1,41 +1,60 @@
 import { useEffect, useRef, useState } from "react"
-import type { JobDto, SourceDto } from "../../shared/recipe.ts"
-import { api, ApiError } from "../api/client.ts"
+import type { SourceDto } from "../../shared/recipe.ts"
+import { api } from "../api/client.ts"
 import { useAuth } from "../store/authStore.ts"
 import { toast } from "../components/Toasts.tsx"
 import { InviteKeyDialog } from "../components/InviteKeyDialog.tsx"
 import { JobProgress } from "./JobProgress.tsx"
+import { useIngest, type Slot } from "./ingestStore.ts"
+import { CropPanel } from "./CropPanel.tsx"
+import { isRealEdit } from "../store/composeStore.ts"
+import type { Edit } from "../../shared/recipe.ts"
 import { fmtClock, parseClock } from "../util/time.ts"
 
-type Phase =
-  | { kind: "idle" }
-  | { kind: "uploading"; pct: number }
-  | { kind: "job"; job: JobDto; source: SourceDto }
-  | { kind: "around"; url: string; duration: number; title: string }
-
 /**
- * One slot of the composition: paste a URL or pick a file, watch it become a
- * source, or re-pick a recent one. Used twice — the base and the clip on top.
+ * One slot of the composition: paste a link, pick or drop a file, paste from
+ * the clipboard, or re-pick a recent source. Used twice — the base and the
+ * clip on top. All the work happens in ingestStore; this is the view.
  */
 export function SourcePicker({
   slot,
   source,
   onSource,
   allowImage,
+  edit = null,
+  onEdit,
 }: {
-  slot: "base" | "overlay"
+  slot: Slot
   source: SourceDto | null
   onSource: (s: SourceDto | null) => void
   allowImage: boolean
+  edit?: Edit | null
+  onEdit?: (e: Edit | null) => void
 }) {
+  const [cropOpen, setCropOpen] = useState(false)
   const verified = useAuth((s) => s.verified)
-  const [phase, setPhase] = useState<Phase>({ kind: "idle" })
+  const phase = useIngest((s) => s[slot])
+  const ingest = useIngest()
   const [url, setUrl] = useState("")
   const [around, setAround] = useState("")
   const [recent, setRecent] = useState<SourceDto[]>([])
   const [keyOpen, setKeyOpen] = useState(false)
+  const [over, setOver] = useState(0)
+  const [confirmDel, setConfirmDel] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
-  const abortRef = useRef<AbortController | null>(null)
+
+  const deleteRecent = async (id: string) => {
+    try {
+      await api.deleteSource(id)
+      setRecent((list) => list.filter((x) => x.id !== id))
+      toast("source deleted")
+    } catch (e) {
+      const status = (e as { status?: number }).status
+      toast(status === 409 ? "a render still uses it" : e instanceof Error ? e.message : "could not delete", "warn")
+    } finally {
+      setConfirmDel(null)
+    }
+  }
 
   useEffect(() => {
     if (!verified) return
@@ -58,38 +77,10 @@ export function SourcePicker({
     return true
   }
 
-  const fail = (e: unknown) => {
-    const msg = e instanceof Error ? e.message : String(e)
-    toast(msg, "danger")
-    setPhase({ kind: "idle" })
-  }
-
-  const handleCreated = (res: { source: SourceDto; job: JobDto | null }) => {
-    if (res.source.status === "ready" || !res.job) {
-      onSource(res.source)
-      setPhase({ kind: "idle" })
-      toast("already here — reused it")
-    } else {
-      setPhase({ kind: "job", job: res.job, source: res.source })
-    }
-  }
-
-  const fetchUrl = async (aroundS?: number) => {
+  const fetchUrl = (aroundS?: number) => {
     const u = url.trim()
     if (!u || needKey()) return
-    setPhase({ kind: "uploading", pct: 0 })
-    try {
-      const res = await api.createUrlSource(u, aroundS)
-      handleCreated(res)
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 409) {
-        const d = typeof e.body.duration === "number" ? e.body.duration : 0
-        const t = typeof e.body.title === "string" ? e.body.title : u
-        setPhase({ kind: "around", url: u, duration: d, title: t })
-        return
-      }
-      fail(e)
-    }
+    void ingest.ingestUrl(slot, u, aroundS)
   }
 
   const submitAround = () => {
@@ -99,50 +90,118 @@ export function SourcePicker({
       toast("give a time like 1:23:45 inside the video", "warn")
       return
     }
-    void fetchUrl(s)
+    void ingest.ingestUrl(slot, phase.url, s)
   }
 
   const pickFile = (file: File | undefined) => {
     if (!file || needKey()) return
-    if (!allowImage && !file.type.startsWith("video/")) {
-      toast("the clip on top has to be a video", "warn")
-      return
-    }
-    const ctl = new AbortController()
-    abortRef.current = ctl
-    setPhase({ kind: "uploading", pct: 0 })
-    api
-      .uploadSource(file, (f) => setPhase({ kind: "uploading", pct: f }), ctl.signal)
-      .then(handleCreated)
-      .catch(fail)
-      .finally(() => {
-        abortRef.current = null
-        if (fileRef.current) fileRef.current.value = ""
-      })
+    void ingest.ingestFile(slot, file)
   }
 
-  const cancelUpload = () => {
-    abortRef.current?.abort()
-    setPhase({ kind: "idle" })
+  const pasteFromClipboard = async () => {
+    if (needKey()) return
+    const nav = navigator as Navigator & { clipboard?: { read?: () => Promise<ClipboardItem[]>; readText?: () => Promise<string> } }
+    try {
+      if (nav.clipboard?.read) {
+        const items = await nav.clipboard.read()
+        for (const item of items) {
+          const type = item.types.find((t) => t.startsWith("image/") || t.startsWith("video/"))
+          if (type) {
+            const blob = await item.getType(type)
+            const ext = type.split("/")[1] ?? "png"
+            void ingest.ingestFile(slot, new File([blob], `pasted.${ext}`, { type }))
+            return
+          }
+        }
+      }
+      const text = nav.clipboard?.readText ? (await nav.clipboard.readText()).trim() : ""
+      if (text && /^https?:\/\//.test(text)) {
+        setUrl(text)
+        void ingest.ingestUrl(slot, text)
+        return
+      }
+      toast("nothing pasteable on the clipboard — copy an image or a link first", "warn")
+    } catch {
+      toast("long-press the link field and paste a link, or pick from your photos", "warn")
+    }
+  }
+
+  // drag & drop onto the whole slot
+  const onDragEnter = (e: React.DragEvent) => {
+    e.preventDefault()
+    setOver((n) => n + 1)
+  }
+  const onDragLeave = () => setOver((n) => Math.max(0, n - 1))
+  const onDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = "copy"
+  }
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setOver(0)
+    const file = e.dataTransfer.files?.[0]
+    if (file) {
+      pickFile(file)
+      return
+    }
+    const text = e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain")
+    if (text && /^https?:\/\//.test(text.trim())) {
+      setUrl(text.trim())
+      if (!needKey()) void ingest.ingestUrl(slot, text.trim())
+    }
   }
 
   const accept = allowImage ? "video/*,image/jpeg,image/png,image/webp" : "video/*"
-  const title = slot === "base" ? "the base" : "the clip on top"
+  const title = slot === "base" ? "base" : "clip on top"
   const hint =
     slot === "base"
-      ? "What it goes over: a video, a photo, or a YouTube link."
-      : "The piece you are laying on top — a song, a line, a moment."
+      ? "what it goes over — a video, a photo, or a link"
+      : "the piece you lay on top — a song, a line, a moment"
 
   return (
-    <section className={`rh-picker rh-picker--${slot}`}>
+    <section
+      className={`rh-picker rh-picker--${slot}${over ? " rh-picker--over" : ""}`}
+      onDragEnter={onDragEnter}
+      onDragLeave={onDragLeave}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+    >
       <div className="rh-picker__head">
-        <span className="rh-picker__title">{title}</span>
+        <span className="rh-picker__title">
+          <span className="rh-picker__n mono">{slot === "base" ? "A" : "B"}</span> {title}
+        </span>
         {source && (
-          <button className="ms-btn ms-btn--ghost rh-picker__swap" onClick={() => onSource(null)}>
-            swap
-          </button>
+          <span className="rh-row">
+            {onEdit && (
+              <button className="rh-link" onClick={() => setCropOpen(true)}>
+                {isRealEdit(edit) ? "edit ·" : "crop / rotate"}
+              </button>
+            )}
+            {isRealEdit(edit) && (
+              <span className="rh-badge mono" title="this source is edited">
+                {edit?.crop && (edit.crop.w < 0.9995 || edit.crop.h < 0.9995) ? "crop " : ""}
+                {edit?.rotate ? `↻${edit.rotate} ` : ""}
+                {edit?.flipH ? "↔" : ""}
+              </span>
+            )}
+            <button className="rh-link" onClick={() => onSource(null)}>
+              swap
+            </button>
+          </span>
         )}
       </div>
+
+      {source && cropOpen && onEdit && (
+        <CropPanel
+          source={source}
+          edit={edit}
+          onClose={() => setCropOpen(false)}
+          onDone={(e) => {
+            onEdit(e)
+            setCropOpen(false)
+          }}
+        />
+      )}
 
       {source ? (
         <SourceCard source={source} />
@@ -153,12 +212,11 @@ export function SourcePicker({
             job={phase.job}
             onDone={(result) => {
               const s = (result ?? phase.source) as SourceDto
-              onSource(s.status ? s : phase.source)
-              setPhase({ kind: "idle" })
+              ingest.finish(slot, s.status ? s : phase.source)
             }}
             onFail={(err) => {
               toast(err, "danger")
-              setPhase({ kind: "idle" })
+              ingest.setPhase(slot, { kind: "idle" })
             }}
           />
         </div>
@@ -166,15 +224,15 @@ export function SourcePicker({
         <div className="rh-picker__job">
           <div className="rh-progress">
             <div className="rh-progress__row">
-              <span className="rh-progress__label">{url.trim() ? "asking the site" : "uploading"}</span>
-              <span className="rh-progress__pct mono">{Math.round(phase.pct * 100)}%</span>
+              <span className="rh-progress__label">{phase.label}</span>
+              <span className="rh-progress__pct mono">{phase.pct > 0 ? `${Math.round(phase.pct * 100)}%` : "…"}</span>
             </div>
             <div className={`rh-progress__track${phase.pct === 0 ? " rh-progress__track--indeterminate" : ""}`}>
-              <div className="rh-progress__fill" style={{ width: `${Math.round(phase.pct * 100)}%` }} />
+              <div className="rh-progress__fill" style={phase.pct === 0 ? undefined : { width: `${Math.round(phase.pct * 100)}%` }} />
             </div>
           </div>
-          {abortRef.current && (
-            <button className="ms-btn ms-btn--ghost" onClick={cancelUpload}>
+          {phase.label === "uploading" && (
+            <button className="ms-btn ms-btn--ghost" onClick={() => ingest.cancel(slot)}>
               cancel
             </button>
           )}
@@ -182,8 +240,8 @@ export function SourcePicker({
       ) : phase.kind === "around" ? (
         <div className="rh-picker__around">
           <p className="rh-hint">
-            <strong>{phase.title}</strong> runs {fmtClock(phase.duration)} — too long to fetch whole.
-            Around what time is the part you want? A 15-minute window around it is fetched.
+            <strong>{phase.title}</strong> runs {fmtClock(phase.duration)} — too long to fetch whole. Around what time is the
+            part you want? A 15-minute window around it is fetched.
           </p>
           <div className="rh-row">
             <div className="ms-search rh-grow">
@@ -201,7 +259,7 @@ export function SourcePicker({
             <button className="ms-btn ms-btn--primary" onClick={submitAround}>
               fetch
             </button>
-            <button className="ms-btn ms-btn--ghost" onClick={() => setPhase({ kind: "idle" })}>
+            <button className="ms-btn ms-btn--ghost" onClick={() => ingest.setPhase(slot, { kind: "idle" })}>
               back
             </button>
           </div>
@@ -214,41 +272,55 @@ export function SourcePicker({
               <input
                 type="url"
                 inputMode="url"
+                enterKeyHint="go"
                 placeholder="paste a link — YouTube, X, TikTok, Instagram…"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") void fetchUrl()
+                  if (e.key === "Enter") fetchUrl()
                 }}
               />
             </div>
-            <button className="ms-btn ms-btn--primary" disabled={!url.trim()} onClick={() => void fetchUrl()}>
+            <button className="ms-btn ms-btn--primary" disabled={!url.trim()} onClick={() => fetchUrl()}>
               fetch
             </button>
           </div>
           <div className="rh-row rh-row--or">
-            <span className="rh-or">or</span>
             <label className="ms-btn rh-filebtn">
-              <input
-                ref={fileRef}
-                type="file"
-                accept={accept}
-                hidden
-                onChange={(e) => pickFile(e.target.files?.[0])}
-              />
-              {allowImage ? "pick a video or photo" : "pick a video"}
+              <input ref={fileRef} type="file" accept={accept} hidden onChange={(e) => pickFile(e.target.files?.[0])} />
+              {allowImage ? "photos & videos" : "pick a video"}
             </label>
+            <button className="ms-btn" onClick={() => void pasteFromClipboard()} title="paste an image, a video or a link from the clipboard">
+              paste
+            </button>
+            <span className="rh-hint rh-picker__drop">or drop a file here</span>
           </div>
           {recent.length > 0 && (
             <div className="rh-recent">
               <div className="rh-recent__label">recent</div>
               <div className="rh-recent__strip">
                 {recent.map((s) => (
-                  <button key={s.id} className="rh-recent__item" onClick={() => onSource(s)} title={s.title}>
-                    {s.thumbUrl ? <img src={s.thumbUrl} alt="" loading="lazy" /> : <span className="rh-recent__blank" />}
-                    <span className="rh-recent__name">{s.title || s.kind}</span>
-                    {s.duration !== null && <span className="rh-recent__dur mono">{fmtClock(s.duration)}</span>}
-                  </button>
+                  <div key={s.id} className="rh-recent__cell">
+                    <button className="rh-recent__item" onClick={() => onSource(s)} title={s.title}>
+                      {s.thumbUrl ? <img src={s.thumbUrl} alt="" loading="lazy" /> : <span className="rh-recent__blank" />}
+                      <span className="rh-recent__name">{s.title || s.kind}</span>
+                      {s.duration !== null && <span className="rh-recent__dur mono">{fmtClock(s.duration)}</span>}
+                    </button>
+                    {confirmDel === s.id ? (
+                      <div className="rh-recent__confirm">
+                        <button className="rh-recent__yes" onClick={() => void deleteRecent(s.id)}>
+                          delete
+                        </button>
+                        <button className="rh-recent__no" onClick={() => setConfirmDel(null)}>
+                          keep
+                        </button>
+                      </div>
+                    ) : (
+                      <button className="rh-recent__x" aria-label={`delete ${s.title || "source"}`} onClick={() => setConfirmDel(s.id)}>
+                        ✕
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>
