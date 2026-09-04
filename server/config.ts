@@ -22,6 +22,9 @@ export type Config = {
   /** forced encoder, or null for boot-time detection */
   renderEncoder: "h264_nvenc" | "libx264" | null
   fontPath: string
+  fontsDir: string
+  /** studio sequences may run this long */
+  seqMaxS: number
   fetchWholeMaxS: number
   fetchWindowS: number
   fetchAbsMaxS: number
@@ -63,6 +66,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
           },
     renderEncoder: enc === "h264_nvenc" || enc === "libx264" ? enc : null,
     fontPath: env.FONT_PATH ?? path.join(import.meta.dirname, "render", "fonts", "Anton-Regular.ttf"),
+    fontsDir: env.FONTS_DIR ?? path.join(import.meta.dirname, "render", "fonts"),
+    seqMaxS: num(env.SEQ_MAX_S, 600),
     fetchWholeMaxS: num(env.FETCH_WHOLE_MAX_S, 900),
     fetchWindowS: num(env.FETCH_WINDOW_S, 900),
     fetchAbsMaxS: num(env.FETCH_ABS_MAX_S, 4 * 3600),

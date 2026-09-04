@@ -16,7 +16,7 @@ const sources: Record<string, SourceInfo> = {
 
 function build(raw: RecipeInput, encoder: "libx264" | "h264_nvenc" = "libx264") {
   const recipe = recipeSchema.parse(raw)
-  return buildArgs({ recipe, sources, jobDir: "/j/x", fontPath: "/f/Anton.ttf", encoder, outPath: "/j/x/out.mp4" })
+  return buildArgs({ recipe, sources, jobDir: "/j/x", fonts: { outline: "/f/Anton.ttf", clean: "/f/plex.woff", arabic: "/f/plexar.ttf" }, encoder, outPath: "/j/x/out.mp4" })
 }
 
 const dub: RecipeInput = { v: 1, base: { kind: "video", source: B, in: 12.5, out: 20 }, overlay: { source: O, in: 3, out: 7, at: 1 } }
@@ -56,7 +56,7 @@ describe("inputs", () => {
   it("fps follows the base, clamped and rounded", () => {
     expect(build(dub).fps).toBe(30)
     const hi = { ...sources, [B]: { ...sources[B]!, fps: 120 } }
-    const r = buildArgs({ recipe: recipeSchema.parse(dub), sources: hi, jobDir: "/j", fontPath: "/f", encoder: "libx264", outPath: "/o" })
+    const r = buildArgs({ recipe: recipeSchema.parse(dub), sources: hi, jobDir: "/j", fonts: { outline: "/f", clean: "/f", arabic: "/f" }, encoder: "libx264", outPath: "/o" })
     expect(r.fps).toBe(60)
   })
 })
@@ -158,6 +158,8 @@ describe("captions", () => {
       "drawtext=textfile=/j/x/cap0.txt:fontfile=/f/Anton.ttf:fontsize=76:fontcolor=white:borderw=5:bordercolor=black:x=960-text_w/2:y=918-text_h/2:text_align=C+M:line_spacing=8:expansion=none",
     )
     expect(r.filterComplex).toContain("x=192:y=216-text_h/2:text_align=L+M:line_spacing=8:enable='between(t,1,2)':expansion=none")
+    const ar = build({ ...dub, captions: [{ text: "مرحبا" }] })
+    expect(ar.filterComplex).toContain("fontfile=/f/plexar.ttf")
     expect(r.filterComplex).toContain("expansion=none,drawtext=")
     expect(r.filterComplex).toMatch(/expansion=none\[v\]/)
   })

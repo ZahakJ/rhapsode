@@ -1,15 +1,34 @@
 import fs from "node:fs"
 import path from "node:path"
 import type { Recipe } from "../../shared/recipe.ts"
+import type { Sequence } from "../../shared/sequence.ts"
+import { buildSequenceArgs } from "./sequence.ts"
 import type { Config } from "../config.ts"
 import type { JobCtx } from "../jobs.ts"
 import { parseProgressLine, runProc } from "../proc.ts"
 import { ffprobe } from "../sources/probe.ts"
 import { makePoster } from "../sources/proxy.ts"
 import type { Store } from "../store.ts"
-import { buildArgs, type Encoder, type SourceInfo } from "./graph.ts"
+import { buildArgs, type Encoder, type Fonts, type SourceInfo } from "./graph.ts"
 
-export type RenderPayload = { slug: string; title: string; recipe: Recipe }
+export type RenderPayload = { slug: string; title: string; recipe?: Recipe; sequence?: Sequence }
+
+export function fontsFor(config: Config): Fonts {
+  return {
+    outline: config.fontPath,
+    clean: path.join(config.fontsDir, "IBMPlexSans-Bold.woff"),
+    arabic: path.join(config.fontsDir, "IBMPlexSansArabic-Bold.ttf"),
+  }
+}
+
+/** every source id a payload touches */
+export function payloadSources(p: RenderPayload): string[] {
+  if (p.recipe) return [p.recipe.base.source, p.recipe.overlay.source]
+  const ids = new Set<string>()
+  for (const t of p.sequence?.tracks ?? []) if (t.kind !== "text") for (const c of t.clips) ids.add(c.source)
+  if (p.sequence?.canvas.sourceOf) ids.add(p.sequence.canvas.sourceOf)
+  return [...ids]
+}
 
 export function sourceInfo(store: Store, id: string): SourceInfo | null {
   const row = store.sourceById(id)
@@ -28,16 +47,20 @@ export function sourceInfo(store: Store, id: string): SourceInfo | null {
 
 export function makeRenderRunner(store: Store, config: Config, encoder: () => Encoder) {
   return async (payload: unknown, ctx: JobCtx, job: { id: string }) => {
-    const { slug, title, recipe } = payload as RenderPayload
+    const p = payload as RenderPayload
+    const { slug, title } = p
     try {
       const sources: Record<string, SourceInfo> = {}
-      for (const id of [recipe.base.source, recipe.overlay.source]) {
+      for (const id of payloadSources(p)) {
         const info = sourceInfo(store, id)
         if (!info) throw new Error("a source is no longer available")
         sources[id] = info
       }
       const outPath = path.join(ctx.jobDir, "out.mp4")
-      const built = buildArgs({ recipe, sources, jobDir: ctx.jobDir, fontPath: config.fontPath, encoder: encoder(), outPath })
+      const fonts = fontsFor(config)
+      const built = p.recipe
+        ? buildArgs({ recipe: p.recipe, sources, jobDir: ctx.jobDir, fonts, encoder: encoder(), outPath })
+        : buildSequenceArgs({ sequence: p.sequence!, sources, jobDir: ctx.jobDir, fonts, encoder: encoder(), outPath })
       for (const f of built.captionFiles) fs.writeFileSync(f.path, f.text, "utf8")
 
       ctx.progress(0, "render")
@@ -60,13 +83,13 @@ export function makeRenderRunner(store: Store, config: Config, encoder: () => En
       const row = store.insertRender({
         slug,
         title,
-        recipeJson: JSON.stringify(recipe),
+        recipeJson: JSON.stringify(p.recipe ? { recipe: p.recipe } : { sequence: p.sequence }),
         duration: probe.duration || built.duration,
         width: probe.width || built.width,
         height: probe.height || built.height,
         bytes: fs.statSync(store.renderPath(slug, "mp4")).size + fs.statSync(store.renderPath(slug, "jpg")).size,
         jobId: job.id,
-        sourceIds: [recipe.base.source, recipe.overlay.source],
+        sourceIds: payloadSources(p),
       })
       ctx.progress(1, "done")
       return store.renderDto(row)

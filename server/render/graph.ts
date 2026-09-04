@@ -32,7 +32,7 @@ export type BuildInput = {
   recipe: Recipe
   sources: Record<string, SourceInfo>
   jobDir: string
-  fontPath: string
+  fonts: Fonts
   encoder: Encoder
   outPath: string
 }
@@ -98,7 +98,7 @@ export function editChain(src: { width: number; height: number }, edit: Edit | u
 }
 
 export function buildArgs(input: BuildInput): BuildOutput {
-  const { recipe, jobDir, fontPath, encoder, outPath } = input
+  const { recipe, jobDir, fonts, encoder, outPath } = input
   const base = input.sources[recipe.base.source]
   const ov = input.sources[recipe.overlay.source]
   if (!base) throw new Error(`unknown base source ${recipe.base.source}`)
@@ -179,7 +179,7 @@ export function buildArgs(input: BuildInput): BuildOutput {
   recipe.captions.forEach((cap, i) => {
     const file = `${jobDir}/cap${i}.txt`
     captionFiles.push({ path: file, text: cap.text })
-    tail.push(drawtext(cap, file, fontPath, W, H))
+    tail.push(drawtext(cap, file, fontFor(cap.text, "outline", fonts), W, H))
   })
   chains.push(`${vOut}${tail.join(",")}[v]`)
 
@@ -253,6 +253,16 @@ function drawtext(cap: Caption, file: string, fontPath: string, W: number, H: nu
   }
   parts.push("expansion=none")
   return `drawtext=${parts.join(":")}`
+}
+
+/** Fonts the renders draw with; `arabic` covers Latin too and is used whenever a line carries Arabic script. */
+export type Fonts = { outline: string; clean: string; arabic: string }
+
+const ARABIC = /[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff\ufb50-\ufdff\ufe70-\ufeff]/
+
+/** Pick the face for a line: the requested one, unless the text needs Arabic glyphs. */
+export function fontFor(text: string, want: "outline" | "clean", fonts: Fonts): string {
+  return ARABIC.test(text) ? fonts.arabic : fonts[want]
 }
 
 /** Paths reach ffmpeg inside a filter string, where these characters are syntax. */
