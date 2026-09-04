@@ -32,6 +32,27 @@ export const kenBurnsSchema = z.object({
   to: z.object({ x: unit, y: unit, w: z.number().min(0.1).max(1) }),
 })
 
+/** Motion on top of the placement: offsets are fractions of the canvas, scale multiplies the placed size, rotation in degrees. */
+export const transformSchema = z.object({
+  x: z.number().min(-2).max(2).default(0),
+  y: z.number().min(-2).max(2).default(0),
+  scale: z.number().min(0.05).max(8).default(1),
+  rotate: z.number().min(-360).max(360).default(0),
+})
+
+/** Picture adjustments, all neutral by default. */
+export const lookSchema = z.object({
+  brightness: z.number().min(-1).max(1).default(0),
+  contrast: z.number().min(0).max(3).default(1),
+  saturation: z.number().min(0).max(3).default(1),
+  gamma: z.number().min(0.1).max(4).default(1),
+  blur: z.number().min(0).max(50).default(0),
+  vignette: z.number().min(0).max(1).default(0),
+  grayscale: z.boolean().default(false),
+})
+export type Transform = z.infer<typeof transformSchema>
+export type Look = z.infer<typeof lookSchema>
+
 export const visualClipSchema = z.object({
   id,
   source: sourceIdSchema,
@@ -49,6 +70,8 @@ export const visualClipSchema = z.object({
   fadeIn: z.number().min(0).max(10).default(0),
   fadeOut: z.number().min(0).max(10).default(0),
   kenBurns: kenBurnsSchema.optional(),
+  transform: transformSchema.optional(),
+  look: lookSchema.optional(),
   /** the video's own sound, 0 = silent */
   volume: z.number().min(0).max(2).default(1),
 })

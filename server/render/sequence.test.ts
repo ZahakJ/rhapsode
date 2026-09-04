@@ -89,6 +89,36 @@ describe("sequence builder", () => {
   })
 })
 
+describe("motion and look", () => {
+  it("scales about the centre, rotates with transparent fill, offsets, and grades", () => {
+    const r = build({ v: 1, tracks: [{ id: "t", kind: "visual", clips: [
+      { id: "c", source: V, at: 0, duration: 2, transform: { x: 0.1, y: -0.05, scale: 0.5, rotate: 15 }, look: { brightness: 0.1, contrast: 1.2, blur: 3, vignette: 0.5 } },
+    ] }] })
+    expect(r.filterComplex).toContain("eq=brightness=0.1:contrast=1.2,gblur=sigma=3,vignette=angle=0.314,format=yuva420p,scale=trunc(iw*0.5/2)*2:trunc(ih*0.5/2)*2:flags=bicubic,rotate=0.262:c=black@0:ow=rotw(0.262):oh=roth(0.262)")
+    expect(r.filterComplex).toContain("overlay=x=0+(1920-w)/2+192:y=0+(1080-h)/2+-54:eof_action=pass")
+  })
+  it("grayscale folds into saturation and a pure offset needs no expression", () => {
+    const r = build({ v: 1, tracks: [{ id: "t", kind: "visual", clips: [
+      { id: "c", source: V, at: 0, duration: 2, transform: { x: 0.25 }, look: { grayscale: true, saturation: 1.5 } },
+    ] }] })
+    expect(r.filterComplex).toContain("eq=saturation=0,format=yuva420p")
+    expect(r.filterComplex).toContain("overlay=x=480:y=0:eof_action=pass")
+    expect(r.filterComplex).not.toContain("rotate=")
+  })
+  it("neutral transform and look emit nothing", () => {
+    const r = build({ v: 1, tracks: [{ id: "t", kind: "visual", clips: [{ id: "c", source: V, at: 0, duration: 2, transform: {}, look: {} }] }] })
+    expect(r.filterComplex).not.toContain("eq=")
+    expect(r.filterComplex).toContain("overlay=x=0:y=0:")
+  })
+  it("free boxes centre the rotated frame on the box", () => {
+    const r = build({ v: 1, tracks: [{ id: "t", kind: "visual", clips: [
+      { id: "c", source: V, at: 0, duration: 2, fit: "free", box: { x: 0.5, y: 0.1, w: 0.25 }, transform: { rotate: 90 } },
+    ] }] })
+    // box 480 wide → 270 high at 16:9; rotated frame is centred on that box
+    expect(r.filterComplex).toContain("overlay=x=960+(480-w)/2+0:y=108+(270-h)/2+0")
+  })
+})
+
 describe("sequence schema", () => {
   it("rejects duplicates, empties, free without box, over-long", () => {
     expect(sequenceSchema.safeParse({ v: 1, tracks: [] }).success).toBe(false)
