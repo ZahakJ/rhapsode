@@ -20,6 +20,8 @@ The quick path: a base, a clip on top, and how they meet — **dub** (keep, duck
 
 When two pieces are not enough: any number of video, music and text tracks. Photos that pan and zoom, clips that dissolve into each other, floating boxes with opacity, subtitles with a second line for translations and SRT in and out, a one-click photo montage. Premiere-style shortcuts, right-click menus, dockable panels. Still one recipe, still one ffmpeg command.
 
+<p align="center"><img src="docs/assets/studio.png" alt="The studio" width="900"></p>
+
 
 ## On the phone
 
