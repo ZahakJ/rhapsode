@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import type { AudioClip, Cue, Track, VisualClip } from "../../shared/sequence.ts"
 import { toast } from "../components/Toasts.tsx"
 import { clamp, fmtTime, round3 } from "../util/time.ts"
-import { clipLength, contentEnd, duration, useStudio, type AnyClip } from "./studioStore.ts"
+import { clipLength, contentEnd, duration, resolveCueOverlap, useStudio, type AnyClip } from "./studioStore.ts"
 
 /**
  * The multitrack timeline. Rows are tracks (top row = topmost visual track),
@@ -143,13 +143,16 @@ export function StudioTimeline() {
             if (i === -1) continue
             const c = (tr.clips as AnyClip[])[i]!
             c.at = round3(Math.max(0, s0 + delta))
+            let home: Track = tr
             if (single && targetTrack && targetTrack !== tr.id && targetKind === tr.kind) {
               const dest = seq.tracks.find((t) => t.id === targetTrack)
               if (dest) {
                 ;(tr.clips as AnyClip[]).splice(i, 1)
                 ;(dest.clips as AnyClip[]).push(c)
+                home = dest
               }
             }
+            if (home.kind === "text") resolveCueOverlap(home.clips as Cue[], c as Cue)
             break
           }
         }
@@ -196,12 +199,16 @@ export function StudioTimeline() {
       } else {
         const q = c as Cue
         const oq = o as Cue
+        const others = (tr.clips as Cue[]).filter((x) => x.id !== q.id)
         if (drag.edge === "l") {
-          const nAt = snapTo(clamp(oq.at + dx, 0, oq.at + oq.duration - 0.1), [q.id])
+          // never trim into the previous cue
+          const prevEnd = Math.max(0, ...others.filter((x) => x.at + x.duration <= oq.at + 0.001).map((x) => x.at + x.duration))
+          const nAt = snapTo(clamp(oq.at + dx, prevEnd, oq.at + oq.duration - 0.1), [q.id])
           q.at = round3(nAt)
           q.duration = round3(oq.duration - (nAt - oq.at))
         } else {
-          const nEnd = snapTo(clamp(oq.at + oq.duration + dx, oq.at + 0.1, 600), [q.id])
+          const nextStart = Math.min(600, ...others.filter((x) => x.at >= oq.at + oq.duration - 0.001).map((x) => x.at))
+          const nEnd = snapTo(clamp(oq.at + oq.duration + dx, oq.at + 0.1, nextStart), [q.id])
           q.duration = round3(nEnd - oq.at)
         }
       }

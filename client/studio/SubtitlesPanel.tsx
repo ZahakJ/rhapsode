@@ -1,4 +1,4 @@
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { cueSchema, formatSrt, parseSrt, type Cue, type Track } from "../../shared/sequence.ts"
 import { toast } from "../components/Toasts.tsx"
 import { round3 } from "../util/time.ts"
@@ -134,21 +134,46 @@ export function SubtitlesPanel() {
       {cues.length === 0 ? (
         <p className="rh-hint st-subs__empty">no cues yet — add one at the playhead, or import an .srt. Enter adds a cue while this table has focus.</p>
       ) : (
-        <div className="st-subs__table">
-          <div className="st-subs__row st-subs__row--head mono">
-            <span>in</span><span>length</span><span>line</span><span>second line</span><span />
-          </div>
-          {cues.map((c: Cue) => (
-            <div key={c.id} className={`st-subs__row${primary === c.id ? " st-subs__row--sel" : ""}`} onClick={() => { select(c.id); setPlayhead(c.at) }}>
-              <TimeField value={c.at} onCommit={(t) => patch(c.id, { at: t })} compact />
-              <TimeField value={c.duration} onCommit={(t) => patch(c.id, { duration: Math.max(0.1, t) })} compact min={0.1} />
-              <textarea className="st-subs__text st-subs__text-main" rows={1} value={c.text} onChange={(e) => patch(c.id, { text: e.target.value })} onKeyDown={(e) => e.stopPropagation()} />
-              <textarea className="st-subs__text st-subs__sub" rows={1} value={c.sub ?? ""} placeholder="translation…" onChange={(e) => patch(c.id, { sub: e.target.value || undefined })} onKeyDown={(e) => e.stopPropagation()} />
-              <button className="st-tl__hb st-tl__hb--danger" onClick={(e) => { e.stopPropagation(); removeClips([c.id]) }} title="delete cue">✕</button>
+        <div className="st-subs__list">
+          {cues.map((c: Cue, i: number) => (
+            <div key={c.id} className={`st-cuecard${primary === c.id ? " st-cuecard--sel" : ""}`} onClick={() => { select(c.id); setPlayhead(c.at) }}>
+              <div className="st-cuecard__row">
+                <span className="st-cuecard__n mono">{i + 1}</span>
+                <label className="st-cuecard__time"><span className="st-field__label">in</span><TimeField value={c.at} onCommit={(t) => patch(c.id, { at: t })} compact /></label>
+                <label className="st-cuecard__time"><span className="st-field__label">length</span><TimeField value={c.duration} onCommit={(t) => patch(c.id, { duration: Math.max(0.1, t) })} compact min={0.1} /></label>
+                <span className="st-tl__spacer" />
+                <button className="st-tl__hb st-tl__hb--danger" onClick={(e) => { e.stopPropagation(); removeClips([c.id]) }} title="delete cue">✕</button>
+              </div>
+              <AutoTextarea className="st-subs__text st-subs__text-main" value={c.text} placeholder="the line" onChange={(v) => patch(c.id, { text: v })} />
+              <AutoTextarea className="st-subs__text st-subs__sub" value={c.sub ?? ""} placeholder="second line — translation…" onChange={(v) => patch(c.id, { sub: v || undefined })} />
             </div>
           ))}
         </div>
       )}
     </div>
+  )
+}
+
+/** A textarea that grows with its content (two rows minimum). */
+function AutoTextarea({ value, onChange, className, placeholder }: { value: string; onChange: (v: string) => void; className: string; placeholder?: string }) {
+  const ref = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = "0px"
+    el.style.height = `${Math.max(40, el.scrollHeight)}px`
+  }, [value])
+  return (
+    <textarea
+      ref={ref}
+      className={className}
+      rows={2}
+      dir="auto"
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    />
   )
 }
