@@ -4,6 +4,8 @@ import { toast } from "../components/Toasts.tsx"
 import { round3 } from "../util/time.ts"
 import { TimeField } from "./fields.tsx"
 import { nid, useStudio } from "./studioStore.ts"
+import { contextMenuProps } from "./ContextMenu.tsx"
+import type { MenuItem } from "./uiStore.ts"
 
 /**
  * The subtitle table for one text track: every cue as a row with typed
@@ -136,7 +138,14 @@ export function SubtitlesPanel() {
       ) : (
         <div className="st-subs__list">
           {cues.map((c: Cue, i: number) => (
-            <div key={c.id} className={`st-cuecard${primary === c.id ? " st-cuecard--sel" : ""}`} onClick={() => { select(c.id); setPlayhead(c.at) }}>
+            <div key={c.id} className={`st-cuecard${primary === c.id ? " st-cuecard--sel" : ""}`} onClick={() => { select(c.id); setPlayhead(c.at) }} {...contextMenuProps((): MenuItem[] => [
+              { kind: "item", label: "Go to cue", run: () => setPlayhead(c.at) },
+              { kind: "sub", label: "Style", items: (["outline", "clean", "box"] as const).map((st) => ({ kind: "item" as const, label: st, checked: c.style === st, run: () => patch(c.id, { style: st }) })) },
+              { kind: "sub", label: "Size", items: [0.04, 0.055, 0.07, 0.09].map((sz) => ({ kind: "item" as const, label: `${Math.round(sz * 100)}%`, checked: Math.abs(c.size - sz) < 0.001, run: () => patch(c.id, { size: sz }) })) },
+              { kind: "sep" },
+              { kind: "item", label: "Duplicate", run: () => useStudio.getState().duplicateClips([c.id]) },
+              { kind: "item", label: "Delete", run: () => removeClips([c.id]) },
+            ])}>
               <div className="st-cuecard__row">
                 <span className="st-cuecard__n mono">{i + 1}</span>
                 <label className="st-cuecard__time"><span className="st-field__label">in</span><TimeField value={c.at} onCommit={(t) => patch(c.id, { at: t })} compact /></label>

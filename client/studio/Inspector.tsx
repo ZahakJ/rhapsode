@@ -1,4 +1,4 @@
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import type { Edit } from "../../shared/recipe.ts"
 import type { AudioClip, Cue, VisualClip } from "../../shared/sequence.ts"
 import { CropPanel } from "../compose/CropPanel.tsx"
@@ -35,16 +35,23 @@ export function Inspector() {
   }
 
   const { track, clip } = found
-  if (track.kind === "visual") return <VisualInspector clip={clip as VisualClip} srcName={sources[(clip as VisualClip).source]?.title} />
+  const visualTracks = seq.tracks.filter((t) => t.kind === "visual")
+  const layer = track.kind === "visual" ? `layer ${visualTracks.indexOf(track) + 1} of ${visualTracks.length}` : undefined
+  if (track.kind === "visual") return <VisualInspector clip={clip as VisualClip} srcName={sources[(clip as VisualClip).source]?.title} layer={layer} />
   if (track.kind === "audio") return <AudioInspector clip={clip as AudioClip} srcName={sources[(clip as AudioClip).source]?.title} />
   return <CueInspector cue={clip as Cue} />
 }
 
-function VisualInspector({ clip, srcName }: { clip: VisualClip; srcName?: string }) {
+function VisualInspector({ clip, srcName, layer }: { clip: VisualClip; srcName?: string; layer?: string }) {
+  const [cropOpen, setCropOpen] = useState(false)
+  useEffect(() => {
+    const open = () => setCropOpen(true)
+    document.addEventListener("rh:open-crop", open)
+    return () => document.removeEventListener("rh:open-crop", open)
+  }, [])
   const patch = useStudio((s) => s.patchClip)
   const sources = useStudio((s) => s.sources)
   const src = sources[clip.source]
-  const [cropOpen, setCropOpen] = useState(false)
   const isVideo = src?.media === "video"
   const srcDur = src?.duration ?? Infinity
   const set = (p: Partial<VisualClip>) => patch(clip.id, p)
@@ -52,7 +59,7 @@ function VisualInspector({ clip, srcName }: { clip: VisualClip; srcName?: string
 
   return (
     <div className="st-inspector">
-      <Section title={isVideo ? "video clip" : "still"} right={<span className="rh-hint st-inspector__src">{srcName}</span>}>
+      <Section title={isVideo ? "video clip" : "still"} right={<span className="rh-hint st-inspector__src">{layer ? `${layer} · ` : ""}{srcName}</span>}>
         <div className="st-grid2">
           <TimeField label="starts at" value={clip.at} onCommit={(t) => set({ at: t })} />
           <TimeField label="duration" value={clip.duration} onCommit={(t) => set({ duration: clamp(t, 0.1, isVideo ? Math.max(0.1, srcDur - clip.in) : 600) })} min={0.1} />

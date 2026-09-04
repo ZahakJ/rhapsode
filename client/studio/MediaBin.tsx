@@ -7,6 +7,8 @@ import { isHttpUrl } from "../compose/ingestStore.ts"
 import { useAuth } from "../store/authStore.ts"
 import { fmtClock, parseClock } from "../util/time.ts"
 import { isAudioSource, isVisualSource, useStudio } from "./studioStore.ts"
+import { contextMenuProps } from "./ContextMenu.tsx"
+import type { MenuItem } from "./uiStore.ts"
 
 type Pending = { key: string; label: string; pct: number | null }
 
@@ -144,6 +146,20 @@ export function MediaBin() {
   }
 
   const selectedStills = binSel.filter((id) => sources[id]?.media === "image")
+  const itemMenu = (s: SourceDto): MenuItem[] => {
+    const st = useStudio.getState()
+    const items: MenuItem[] = [
+      { kind: "item", label: "Add at playhead", run: () => { addClip(s) } },
+      { kind: "item", label: "Add to a new track", run: () => { const id = st.addTrack(isVisualSource(s) ? "visual" : "audio"); st.addClipFromSource(s, { trackId: id }) } },
+    ]
+    if (s.media === "video" && s.hasAudio) items.push({ kind: "item", label: "Add as sound only", run: () => { const t = [...st.seq.tracks].reverse().find((x) => x.kind === "audio")?.id ?? st.addTrack("audio"); st.addClipFromSource(s, { trackId: t }) } })
+    if (selectedStills.length >= 2) items.push({ kind: "item", label: `Make a montage of ${selectedStills.length} stills`, run: () => makeMontage(selectedStills, each, 0.5) })
+    items.push({ kind: "sep" })
+    items.push({ kind: "item", label: "Delete source", run: () => {
+      api.deleteSource(s.id).then(() => { useStudio.setState((x) => { const sources = { ...x.sources }; delete sources[s.id]; return { sources } }); toast("source deleted") }).catch((e) => toast(e instanceof Error ? e.message : "could not delete", "warn"))
+    } })
+    return items
+  }
 
   return (
     <div
@@ -257,6 +273,7 @@ export function MediaBin() {
               }}
               onClick={(e) => toggleBin(s.id, e.shiftKey || e.metaKey || e.ctrlKey)}
               title={s.title}
+              {...contextMenuProps(() => itemMenu(s))}
             >
               <div className="st-bin__thumb">
                 {s.thumbUrl ? <img src={s.thumbUrl} alt="" loading="lazy" /> : <span className="st-bin__glyph">{audioOnly ? "♪" : "▣"}</span>}
