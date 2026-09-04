@@ -311,6 +311,7 @@ export function StudioTimeline() {
         items.push({ kind: "sub", label: "Fades", items: [cmd("clip.fade0"), cmd("clip.fade025"), cmd("clip.fade05"), cmd("clip.fade1")] })
         if (src?.media === "image") items.push({ kind: "sub", label: "Pan & zoom", items: [cmd("clip.kbNone"), cmd("clip.kbIn"), cmd("clip.kbOut"), cmd("clip.kbRight"), cmd("clip.kbLeft")] })
         items.push(cmd("clip.crop"))
+        items.push({ kind: "sub", label: "Motion & look", items: [cmd("clip.centre"), cmd("clip.resetMotion"), cmd("clip.resetLook")] })
         items.push({ kind: "sep" })
       }
       if (track.kind === "text") {

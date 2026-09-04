@@ -272,7 +272,9 @@ export function Trimmer({
           />
         )}
         <button
+          type="button"
           className={`rh-trim__play${playing ? " rh-trim__play--on" : ""}`}
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation()
             toggle()

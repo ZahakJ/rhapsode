@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { editedDims, type SourceDto } from "../../shared/recipe.ts"
+import { Gizmo, placedRect } from "./Gizmo.tsx"
 import type { AudioClip, Cue, Sequence, VisualClip } from "../../shared/sequence.ts"
 import { EditedMedia } from "../compose/Stage.tsx"
 import { clamp, fmtTC } from "../util/time.ts"
@@ -202,7 +203,16 @@ export function Monitor() {
         onPointerUp={() => (panRef.current = null)}
         {...ctxOnly(monitorMenu)}
       >
-      <div ref={stageRef} className="st-stage" style={{ aspectRatio: `${ratio}`, background: `#${seq.canvas.background}`, transform: mz !== 1 || mpan.x || mpan.y ? `translate(${mpan.x}px, ${mpan.y}px) scale(${mz})` : undefined }} onClick={() => select(null)}>
+      <div
+        ref={stageRef}
+        className="st-stage"
+        style={{ aspectRatio: `${ratio}`, background: `#${seq.canvas.background}`, transform: mz !== 1 || mpan.x || mpan.y ? `translate(${mpan.x}px, ${mpan.y}px) scale(${mz})` : undefined }}
+        onClick={() => {
+          // empty monitor: a click deselects and toggles playback, like a player
+          if (useStudio.getState().primary) select(null)
+          else setPlaying(!useStudio.getState().playing)
+        }}
+      >
         {grid && <div className="st-overlay st-overlay--grid" aria-hidden="true" />}
         {safe && <div className="st-overlay st-overlay--safe" aria-hidden="true"><div className="st-overlay__action" /><div className="st-overlay__title" /></div>}
         {guides.v.map((x) => <div key={`v${x}`} className="st-guide st-guide--v" style={{ left: `${x * 100}%` }} />)}
@@ -216,7 +226,7 @@ export function Monitor() {
       </div>
       </div>
       <div className="st-monitor__bar">
-        <button className="st-play" onClick={() => setPlaying(!playing)} aria-label={playing ? "pause" : "play"}>
+        <button type="button" className="st-play" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setPlaying(!useStudio.getState().playing) }} aria-label={playing ? "pause" : "play"}>
           {playing ? "❚❚" : "▶"}
         </button>
         <span className="st-tc mono">
@@ -258,13 +268,39 @@ function VisualLayer({ clip, len, src, t, size, playing, selected, onGuides }: {
     ) : (
       <ClipVideo src={src} want={clip.in + (t - clip.at)} playing={playing} volume={clip.volume} />
     )
+  const tr = clip.transform
+  const lk = clip.look
+  const filter = lk
+    ? [
+        lk.brightness ? `brightness(${1 + lk.brightness})` : "",
+        lk.contrast !== 1 ? `contrast(${lk.contrast})` : "",
+        lk.saturation !== 1 ? `saturate(${lk.saturation})` : "",
+        lk.grayscale ? "grayscale(1)" : "",
+        lk.blur ? `blur(${(lk.blur * size.w) / 1920}px)` : "",
+      ].filter(Boolean).join(" ") || undefined
+    : undefined
+  const placed = placedRect(clip, size, aspect)
+  // the transform is about the placed rect's centre; the layer's own box may be the whole stage (fit/fill)
+  const originX = placed.cx - (tr?.x ?? 0) * size.w - (box.left as number)
+  const originY = placed.cy - (tr?.y ?? 0) * size.h - (box.top as number)
+  const transform = tr && (tr.x || tr.y || tr.scale !== 1 || tr.rotate) ? `translate(${tr.x * size.w}px, ${tr.y * size.h}px) rotate(${tr.rotate}deg) scale(${tr.scale})` : undefined
   return (
-    <div className={`st-layer${selected ? " st-layer--sel" : ""}`} style={{ ...box, opacity }} onClick={(e) => { e.stopPropagation(); useStudio.getState().select(clip.id) }}>
-      <EditedMedia source={src} edit={clip.edit ?? null} boxW={boxW} boxH={boxH} fit={clip.fit === "cover" ? "cover" : "contain"}>
-        {media}
-      </EditedMedia>
-      {selected && clip.fit === "free" && <FreeBoxHandles clip={clip} size={size} aspect={aspect} onGuides={onGuides} />}
-    </div>
+    <>
+      <div
+        className={`st-layer${selected ? " st-layer--sel" : ""}`}
+        style={{ ...box, opacity, filter, transform, transformOrigin: `${isFinite(originX) ? originX : 0}px ${isFinite(originY) ? originY : 0}px` }}
+        onClick={(e) => {
+          e.stopPropagation()
+          useStudio.getState().select(clip.id)
+        }}
+      >
+        <EditedMedia source={src} edit={clip.edit ?? null} boxW={boxW} boxH={boxH} fit={clip.fit === "cover" ? "cover" : "contain"}>
+          {media}
+        </EditedMedia>
+        {lk?.vignette ? <div className="st-vignette" style={{ opacity: lk.vignette }} /> : null}
+      </div>
+      {selected && <Gizmo clip={clip} size={size} aspect={aspect} onGuides={onGuides} />}
+    </>
   )
 }
 
