@@ -36,7 +36,11 @@ ffmpeg/ffprobe must be on PATH. yt-dlp is only exercised by hand.
   contain/cover/free+box, opacity, alpha fades, Ken Burns windows, crop/
   rotate/flip, own-sound volume; audio clips with in/out/gain/fades; text
   cues with a `sub` line (translations), styles outline/clean/box, SRT
-  parse/format. Caps 600 s / 80 clips / 400 cues / 12 tracks.
+  parse/format; per-clip `transform` (canvas-fraction offset, scale about
+  the centre, any rotation with transparent fill — overlay x/y become
+  `(placed-w)/2+dx` expressions) and `look` (eq brightness/contrast/
+  saturation/gamma, gblur, vignette, grayscale). Caps 600 s / 80 clips /
+  400 cues / 12 tracks.
 - `server/render/sequence.ts` — `buildSequenceArgs`: one ffmpeg command for
   a whole sequence (per-clip inputs, yuva overlays bottom→top over a
   `color` background, zoompan for stills, amix of every lane, drawtext per
