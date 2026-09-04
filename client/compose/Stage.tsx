@@ -21,7 +21,7 @@ export function Stage() {
   const register = usePreview((p) => p.register)
   const stageRef = useRef<HTMLDivElement>(null)
   const baseVideo = useRef<HTMLVideoElement>(null)
-  const ovVideo = useRef<HTMLVideoElement>(null)
+  const ovVideo = useRef<HTMLMediaElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
   const rafRef = useRef<number | null>(null)
   const t0Ref = useRef(0)
@@ -298,7 +298,11 @@ export function Stage() {
     )
 
   const ovMedia = overlay ? (
-    <video ref={ovVideo} className="rh-stage__media rh-stage__ov" src={overlay.proxyUrl ?? undefined} playsInline preload="metadata" onLoadedMetadata={(e) => { e.currentTarget.currentTime = ovIn }} />
+    overlay.media === "audio" ? (
+      <audio ref={ovVideo as React.RefObject<HTMLAudioElement>} src={overlay.proxyUrl ?? undefined} preload="metadata" onLoadedMetadata={(e) => { e.currentTarget.currentTime = ovIn }} />
+    ) : (
+      <video ref={ovVideo as React.RefObject<HTMLVideoElement>} className="rh-stage__media rh-stage__ov" src={overlay.proxyUrl ?? undefined} playsInline preload="metadata" onLoadedMetadata={(e) => { e.currentTarget.currentTime = ovIn }} />
+    )
   ) : null
   const ovIn_ = (box: { w: number; h: number }) =>
     overlay ? (
@@ -405,7 +409,7 @@ export function Stage() {
  * (crop → rotate → mirror) with contain or cover, then show only the crop
  * region of the underlying media. Pure CSS; the render is the truth.
  */
-function EditedMedia({
+export function EditedMedia({
   source,
   edit,
   boxW,

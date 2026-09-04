@@ -63,7 +63,7 @@ export function SourcePicker({
       .listSources()
       .then((list) => {
         if (!live) return
-        setRecent(list.filter((s) => s.status === "ready" && (allowImage || s.media === "video")))
+        setRecent(list.filter((s) => s.status === "ready" && (allowImage ? s.media !== "audio" : s.media !== "image")))
       })
       .catch(() => {})
     return () => {
@@ -151,7 +151,7 @@ export function SourcePicker({
     }
   }
 
-  const accept = allowImage ? "video/*,image/jpeg,image/png,image/webp" : "video/*"
+  const accept = allowImage ? "video/*,image/jpeg,image/png,image/webp" : "video/*,audio/*"
   const title = slot === "base" ? "base" : "clip on top"
   const hint =
     slot === "base"
@@ -288,7 +288,7 @@ export function SourcePicker({
           <div className="rh-row rh-row--or">
             <label className="ms-btn rh-filebtn">
               <input ref={fileRef} type="file" accept={accept} hidden onChange={(e) => pickFile(e.target.files?.[0])} />
-              {allowImage ? "photos & videos" : "pick a video"}
+              {allowImage ? "photos & videos" : "pick a video or a sound"}
             </label>
             <button className="ms-btn" onClick={() => void pasteFromClipboard()} title="paste an image, a video or a link from the clipboard">
               paste
@@ -343,7 +343,7 @@ function SourceCard({ source }: { source: SourceDto }) {
       <div className="rh-srccard__meta">
         <div className="rh-srccard__title">{source.title || (source.kind === "url" ? source.url : "upload")}</div>
         <div className="rh-srccard__line mono">
-          {source.media === "image" ? "photo" : source.duration !== null ? fmtClock(source.duration) : "video"}
+          {source.media === "image" ? "photo" : source.media === "audio" ? `♪ sound · ${fmtClock(source.duration ?? 0)}` : source.duration !== null ? fmtClock(source.duration) : "video"}
           {source.width && source.height ? ` · ${source.width}×${source.height}` : ""}
           {source.media === "video" && !source.hasAudio ? " · silent" : ""}
         </div>

@@ -28,7 +28,8 @@ export function Trimmer({
 }) {
   const duration = source.duration ?? 0
   const fps = source.fps && source.fps > 0 ? source.fps : 30
-  const videoRef = useRef<HTMLVideoElement>(null)
+  const videoRef = useRef<HTMLMediaElement>(null)
+  const isAudio = source.media === "audio"
   const barRef = useRef<HTMLDivElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const [playing, setPlaying] = useState(false)
@@ -254,15 +255,22 @@ export function Trimmer({
         </span>
       </div>
 
-      <div className="rh-trim__video">
-        <video
-          ref={videoRef}
-          src={source.proxyUrl ?? undefined}
-          playsInline
-          preload="metadata"
-          onClick={toggle}
-          onLoadedMetadata={() => seek(inT)}
-        />
+      <div className={`rh-trim__video${isAudio ? " rh-trim__video--audio" : ""}`}>
+        {isAudio ? (
+          <>
+            <img className="rh-trim__wave" src={source.thumbUrl ?? ""} alt="" draggable={false} onClick={toggle} />
+            <audio ref={videoRef as React.RefObject<HTMLAudioElement>} src={source.proxyUrl ?? undefined} preload="metadata" onLoadedMetadata={() => seek(inT)} />
+          </>
+        ) : (
+          <video
+            ref={videoRef as React.RefObject<HTMLVideoElement>}
+            src={source.proxyUrl ?? undefined}
+            playsInline
+            preload="metadata"
+            onClick={toggle}
+            onLoadedMetadata={() => seek(inT)}
+          />
+        )}
         <button
           className={`rh-trim__play${playing ? " rh-trim__play--on" : ""}`}
           onClick={(e) => {

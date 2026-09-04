@@ -112,12 +112,14 @@ export const useCompose = create<ComposeState>()((set, get) => ({
   setOverlay: (s) => {
     if (!s) return set({ overlay: null, ovIn: 0, ovOut: 0, overlayEdit: null })
     const c = defaultCut(s)
-    set({ overlay: s, ovIn: c.in, ovOut: c.out, overlayEdit: null })
+    // a sound has no picture: only a dub makes sense
+    set({ overlay: s, ovIn: c.in, ovOut: c.out, overlayEdit: null, ...(s.media === "audio" ? { mode: { kind: "dub" } as Mode } : {}) })
   },
   patch: (p) => set(p),
   setMode: (kind) => {
     const cur = get().mode
     if (cur.kind === kind) return
+    if (get().overlay?.media === "audio" && kind !== "dub") return
     if (kind === "dub") set({ mode: { kind: "dub" } })
     else if (kind === "pip") set({ mode: { kind: "pip", box: { x: 0.6, y: 0.05, w: 0.35 } } })
     else set({ mode: { kind: "stack", dir: "bottom" } })

@@ -32,6 +32,7 @@ const aborts: Record<Slot, AbortController | null> = { base: null, overlay: null
 
 export function slotAccepts(slot: Slot, file: File): boolean {
   if (file.type.startsWith("video/")) return true
+  if (file.type.startsWith("audio/")) return slot === "overlay"
   if (file.type.startsWith("image/")) return slot === "base"
   // some browsers hand over files with an empty type (mov, drag from finder)
   return !file.type && slot === "base"
@@ -41,6 +42,7 @@ export function slotAccepts(slot: Slot, file: File): boolean {
 export function routeFile(file: File): Slot | null {
   const c = useCompose.getState()
   if (file.type.startsWith("image/")) return "base"
+  if (file.type.startsWith("audio/")) return "overlay"
   if (file.type.startsWith("video/")) {
     if (!c.base) return "base"
     if (!c.overlay) return "overlay"
@@ -90,7 +92,7 @@ export const useIngest = create<IngestState>()((set, get) => ({
       return
     }
     if (!slotAccepts(slot, file)) {
-      toast(slot === "overlay" ? "the clip on top has to be a video" : "that file type is not supported", "warn")
+      toast(slot === "overlay" ? "the clip on top has to be a video or a sound" : "the base takes a video or a photo — sounds go on top", "warn")
       return
     }
     const ctl = new AbortController()

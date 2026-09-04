@@ -15,6 +15,8 @@ import { Stage } from "./Stage.tsx"
 import { Timeline } from "./Timeline.tsx"
 import { useIngest, isHttpUrl, routeFile, routeUrl } from "./ingestStore.ts"
 import { clamp, fmtTime, isTyping, round1 } from "../util/time.ts"
+import { recipeSchema } from "../../shared/recipe.ts"
+import { sequenceFromRecipe, useStudio } from "../studio/studioStore.ts"
 
 type Step = "sources" | "cut" | "compose"
 type RenderPhase = { kind: "idle" } | { kind: "submitting" } | { kind: "job"; job: JobDto; slug: string; stage: string | null; progress: number | null }
@@ -60,12 +62,12 @@ export function ComposeView() {
     const onPaste = (e: ClipboardEvent) => {
       const dt = e.clipboardData
       if (!dt) return
-      const file = Array.from(dt.files).find((f) => f.type.startsWith("image/") || f.type.startsWith("video/"))
+      const file = Array.from(dt.files).find((f) => f.type.startsWith("image/") || f.type.startsWith("video/") || f.type.startsWith("audio/"))
       if (file) {
         e.preventDefault()
         const slot = routeFile(file)
         if (!slot) return
-        toast(`pasted ${file.type.startsWith("image/") ? "an image" : "a video"} into ${slot === "base" ? "A · the base" : "B · the clip"}`)
+        toast(`pasted ${file.type.startsWith("image/") ? "an image" : file.type.startsWith("audio/") ? "a sound" : "a video"} into ${slot === "base" ? "A · the base" : "B · the clip"}`)
         void useIngest.getState().ingestFile(slot, file)
         return
       }
@@ -200,8 +202,23 @@ export function ComposeView() {
     </div>
   )
 
+  const openInStudio = () => {
+    const v = validateRecipe()
+    if (!v.ok || !s.base || !s.overlay) {
+      toast(v.ok ? "pick both pieces first" : v.error, "warn")
+      return
+    }
+    const seq = sequenceFromRecipe(recipeSchema.parse(v.recipe), s.base, s.overlay)
+    useStudio.getState().setSequence(seq, s.title, [s.base, s.overlay])
+    toast("opened in the studio — tracks, music, subtitles from here")
+    navigate("#/studio")
+  }
+
   const renderBar = (
     <div className="rh-renderbar">
+      <button className="ms-btn ms-btn--ghost rh-studiolink" disabled={!ready} onClick={openInStudio} title="continue this composition as a multitrack sequence">
+        open in studio →
+      </button>
       <div className="ms-search rh-grow">
         <input placeholder="title (optional)" value={s.title} maxLength={120} onChange={(e) => s.patch({ title: e.target.value })} />
       </div>
@@ -364,6 +381,7 @@ function Inspector() {
             { v: "stack", l: "stack" },
           ]}
         />
+        {s.overlay?.media === "audio" && <p className="rh-hint">a sound can only be dubbed — its picture does not exist</p>}
         {s.mode.kind === "stack" && (
           <Seg
             block

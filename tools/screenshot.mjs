@@ -37,6 +37,7 @@ const ff = (args) => execFileSync("ffmpeg", ["-hide_banner", "-nostdin", "-logle
 ff(["-f", "lavfi", "-i", "testsrc2=s=640x360:r=30:d=4", "-f", "lavfi", "-i", "sine=f=330:d=4", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-t", "4", `${fx}/base.mp4`])
 ff(["-f", "lavfi", "-i", "testsrc=s=320x240:r=25:d=3", "-f", "lavfi", "-i", "sine=f=660:d=3", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-t", "3", `${fx}/clip.mp4`])
 ff(["-f", "lavfi", "-i", "color=c=0x2a1f5e:s=720x900", "-frames:v", "1", `${fx}/photo.png`])
+ff(["-f", "lavfi", "-i", "sine=f=523:d=5", "-c:a", "aac", "-t", "5", `${fx}/sound.m4a`])
 
 const server = spawn("node", ["server/index.ts"], {
   cwd: ROOT,
@@ -62,11 +63,13 @@ try {
     const { source, job } = await res.json()
     const done = await waitJob(job.id)
     if (done.status !== "done") throw new Error(`fetch job for ${name} failed: ${done.error}`)
-    return source
+    return done.result && done.result.id ? done.result : source
   }
   const base = await upload(`${fx}/base.mp4`, "smoke base.mp4")
   const clip = await upload(`${fx}/clip.mp4`, "smoke clip.mp4")
   await upload(`${fx}/photo.png`, "smoke photo.png")
+  const sound = await upload(`${fx}/sound.m4a`, "smoke sound.m4a")
+  if (sound.media !== "audio" || !sound.proxyUrl?.endsWith(".m4a")) throw new Error(`sound source is not audio: ${JSON.stringify(sound)}`)
 
   const renderRes = await fetch(`${ORIGIN}/api/renders`, {
     method: "POST",
@@ -147,6 +150,47 @@ try {
   await page.goto(`${ORIGIN}/#/remix/${slug}`, { waitUntil: "load" })
   await page.waitForSelector(".rh-stage", { timeout: 10000 })
   console.log("  ✓ remix")
+
+  // ————— a sound over a photo: the headline use case —————
+  await page.locator(".rh-picker--base .rh-link", { hasText: "swap" }).click()
+  await page.locator(".rh-picker--base .rh-recent__item", { hasText: "smoke photo" }).first().click()
+  await page.locator(".rh-picker--overlay .rh-link", { hasText: "swap" }).click()
+  await page.locator(".rh-picker--overlay .rh-recent__item", { hasText: "smoke sound" }).first().click()
+  await page.waitForSelector(".rh-trim__video--audio", { timeout: 10000 })
+  await page.getByRole("button", { name: "picture-in-picture" }).click()
+  const dubStillActive = await page.locator(".ms-seg__opt--active", { hasText: "dub" }).count()
+  if (!dubStillActive) throw new Error("a sound overlay must stay in dub mode")
+  await page.waitForTimeout(500)
+  await page.screenshot({ path: shot("compose-sound") })
+  await page.locator(".rh-renderbtn").click()
+  await page.waitForURL(/#\/r\//, { timeout: 60000 })
+  await page.waitForSelector("video", { timeout: 10000 })
+  console.log(`  ✓ sound over a photo → ${decodeURIComponent(page.url().split("#/r/")[1])}`)
+
+  // ————— studio: a still + a clip on the timeline, a bilingual cue, render —————
+  await page.goto(`${ORIGIN}/#/studio`, { waitUntil: "load" })
+  await page.waitForSelector(".st-bin__item", { timeout: 10000 })
+  await page.getByRole("button", { name: "new" }).click().catch(() => {})
+  await page.locator(".st-bin__item", { hasText: "smoke photo" }).first().locator(".st-bin__add").click()
+  await page.locator(".st-bin__item", { hasText: "smoke clip" }).first().locator(".st-bin__add").click()
+  await page.locator(".st-bin__item", { hasText: "smoke sound" }).first().locator(".st-bin__add").click()
+  if ((await page.locator(".st-clip--audio").count()) !== 1) throw new Error("the sound did not land on an audio track")
+  await page.locator(".st-side__tab", { hasText: "subtitles" }).click()
+  await page.locator(".st-subs__add").click()
+  await page.locator(".st-subs__text-main").first().fill("one")
+  await page.locator(".st-subs__sub").first().fill("two")
+  await page.locator(".st-side__tab", { hasText: "inspector" }).click()
+  await page.locator(".st-clip--visual").first().click()
+  await page.waitForTimeout(600)
+  await page.screenshot({ path: shot("studio") })
+  const clipCount = await page.locator(".st-clip").count()
+  if (clipCount < 4) throw new Error(`studio: expected 4 clips on the timeline, saw ${clipCount}`)
+  await page.locator(".st-render").click()
+  await page.waitForURL(/#\/r\//, { timeout: 120000 })
+  await page.waitForSelector("video", { timeout: 10000 })
+  await page.waitForTimeout(500)
+  await page.screenshot({ path: shot("studio-result") })
+  console.log(`  ✓ studio → ${decodeURIComponent(page.url().split("#/r/")[1])}`)
   await page.close()
 
   // ————— phone —————
@@ -176,6 +220,14 @@ try {
     await phone.screenshot({ path: shot(`phone-${name}`) })
     console.log(`  ✓ phone ${name}`)
   }
+  // the studio must not break on a phone
+  await phone.goto(`${ORIGIN}/#/studio`, { waitUntil: "load" })
+  await phone.waitForSelector(".st-stage", { timeout: 10000 })
+  await phone.waitForTimeout(500)
+  if (await phone.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)) throw new Error("phone studio: page scrolls horizontally")
+  await phone.screenshot({ path: shot("phone-studio") })
+  console.log("  ✓ phone studio")
+
   // the stepper: pick pieces → cut → compose on a phone
   await phone.goto(`${ORIGIN}/#/`, { waitUntil: "load" })
   await phone.waitForSelector(".rh-recent__item", { timeout: 10000 })

@@ -7,6 +7,7 @@ import type {
   SourceDto,
   StorageDto,
 } from "../../shared/recipe.ts"
+import type { Sequence, SequenceInput } from "../../shared/sequence.ts"
 import { useAuth } from "../store/authStore.ts"
 
 export class ApiError extends Error {
@@ -47,7 +48,7 @@ const json = (body: unknown): RequestInit => ({
 
 export type SourceCreated = { source: SourceDto; job: JobDto | null }
 export type RenderCreated = { job: JobDto; slug: string }
-export type RecipeBundle = { recipe: Recipe; sources: SourceDto[] }
+export type RecipeBundle = { recipe?: Recipe; sequence?: Sequence; title?: string; sources: SourceDto[] }
 
 export const api = {
   verifyKey: async (key: string): Promise<boolean> => {
@@ -109,6 +110,9 @@ export const api = {
   // ——— renders ———
   createRender: (recipe: RecipeInput, title?: string) =>
     request<RenderCreated>("/api/renders", json(title ? { recipe, title } : { recipe })),
+
+  createSequenceRender: (sequence: SequenceInput, title?: string) =>
+    request<RenderCreated>("/api/renders", json(title ? { sequence, title } : { sequence })),
 
   listRenders: (cursor?: string, limit = 30) => {
     const qs = new URLSearchParams()
