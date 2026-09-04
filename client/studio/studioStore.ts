@@ -26,6 +26,7 @@ import { clamp, round3 } from "../util/time.ts"
 // `mutate()` after one `snapshot()` at pointer-down.
 
 export type AnyClip = VisualClip | AudioClip | Cue
+export type ClipboardItem = { kind: Track["kind"]; clip: AnyClip }
 export type Panel = "inspector" | "subtitles" | "bin"
 
 export const nid = (): string => Math.random().toString(36).slice(2, 9)
@@ -89,6 +90,18 @@ export type StudioState = {
   splitAt: (clipId: string, t: number) => void
   makeMontage: (sourceIds: string[], each: number, cross: number) => void
   fitMusic: (clipId: string) => void
+
+  // ——— premiere-ish editing ———
+  rippleDelete: (ids: string[]) => void
+  rippleTrim: (clipId: string, t: number, side: "prev" | "next") => void
+  nudge: (ids: string[], dt: number) => void
+  moveSelectionTrack: (ids: string[], dir: -1 | 1) => void
+  trackToEdge: (trackId: string, edge: "front" | "back") => void
+  selectAllOnTrack: (trackId: string | null) => void
+  copySelection: (ids: string[]) => ClipboardItem[]
+  pasteAt: (items: ClipboardItem[], at: number, trackId?: string | null) => string[]
+  editPoints: () => number[]
+  setClipOrder: (trackId: string, toIndex: number) => void
 
   // ——— ui ———
   select: (id: string | null, additive?: boolean) => void
@@ -436,6 +449,134 @@ export const useStudio = create<StudioState>()((set, get) => ({
       a.fadeOut = Math.min(2, a.out - a.in)
     })
   },
+
+  rippleDelete: (ids) => {
+    if (!ids.length) return
+    get().edit((seq) => {
+      for (const t of seq.tracks) {
+        const gone = (t.clips as AnyClip[]).filter((c) => ids.includes(c.id))
+        if (!gone.length) continue
+        ;(t as { clips: AnyClip[] }).clips = (t.clips as AnyClip[]).filter((c) => !ids.includes(c.id))
+        // close each gap on that track, latest first so earlier shifts don't move the later ones twice
+        for (const gc of gone.sort((a, b) => b.at - a.at)) {
+          const len = clipLength(t, gc)
+          for (const c of t.clips as AnyClip[]) if (c.at >= gc.at + len - 0.001) c.at = round3(c.at - len)
+        }
+      }
+    })
+    set({ selected: [], primary: null })
+  },
+
+  rippleTrim: (clipId, t, side) =>
+    get().edit((seq) => {
+      const f = findClip(seq, clipId)
+      if (!f) return
+      const len = clipLength(f.track, f.clip)
+      const start = f.clip.at
+      const end = start + len
+      if (side === "prev") {
+        // trim the head to the playhead and pull the clip (and everything after) back
+        if (t <= start || t >= end - 0.1) return
+        const cut = t - start
+        if (f.track.kind === "audio") (f.clip as AudioClip).in = round3((f.clip as AudioClip).in + cut)
+        else {
+          ;(f.clip as VisualClip).duration = round3(len - cut)
+          if ("in" in f.clip) (f.clip as VisualClip).in = round3((f.clip as VisualClip).in + cut)
+        }
+        for (const c of f.track.clips as AnyClip[]) if (c.at >= start + 0.001 || c.id === clipId) c.at = round3(c.at - (c.id === clipId ? 0 : cut))
+      } else {
+        if (t <= start + 0.1 || t >= end) return
+        const cut = end - t
+        if (f.track.kind === "audio") (f.clip as AudioClip).out = round3((f.clip as AudioClip).out - cut)
+        else (f.clip as VisualClip).duration = round3(len - cut)
+        for (const c of f.track.clips as AnyClip[]) if (c.at >= end - 0.001) c.at = round3(c.at - cut)
+      }
+    }),
+
+  nudge: (ids, dt) => {
+    if (!ids.length) return
+    get().edit((seq) => {
+      for (const t of seq.tracks) for (const c of t.clips as AnyClip[]) if (ids.includes(c.id)) c.at = round3(Math.max(0, c.at + dt))
+    })
+  },
+
+  moveSelectionTrack: (ids, dir) =>
+    get().edit((seq) => {
+      for (const id of ids) {
+        const f = findClip(seq, id)
+        if (!f) continue
+        const same = seq.tracks.filter((t) => t.kind === f.track.kind)
+        const i = same.indexOf(f.track)
+        const dest = same[i + dir]
+        if (!dest) continue
+        ;(f.track.clips as AnyClip[]).splice(f.index, 1)
+        ;(dest.clips as AnyClip[]).push(f.clip)
+      }
+    }),
+
+  trackToEdge: (trackId, edge) =>
+    get().edit((seq) => {
+      const i = seq.tracks.findIndex((t) => t.id === trackId)
+      if (i === -1) return
+      const [t] = seq.tracks.splice(i, 1)
+      if (edge === "front") seq.tracks.push(t!)
+      else seq.tracks.unshift(t!)
+    }),
+
+  selectAllOnTrack: (trackId) =>
+    set((s) => {
+      const tracks = trackId ? s.seq.tracks.filter((t) => t.id === trackId) : s.seq.tracks
+      const ids = tracks.flatMap((t) => (t.clips as AnyClip[]).map((c) => c.id))
+      return { selected: ids, primary: ids.at(-1) ?? null }
+    }),
+
+  copySelection: (ids) => {
+    const seq = get().seq
+    const items: ClipboardItem[] = []
+    for (const t of seq.tracks) for (const c of t.clips as AnyClip[]) if (ids.includes(c.id)) items.push({ kind: t.kind, clip: JSON.parse(JSON.stringify(c)) as AnyClip })
+    return items
+  },
+
+  pasteAt: (items, at, trackId) => {
+    if (!items.length) return []
+    const created: string[] = []
+    const base = Math.min(...items.map((i) => i.clip.at))
+    get().edit((seq) => {
+      for (const it of items) {
+        let track = trackId ? seq.tracks.find((t) => t.id === trackId && t.kind === it.kind) : undefined
+        if (!track) track = [...seq.tracks].reverse().find((t) => t.kind === it.kind)
+        if (!track) {
+          track = { id: nid(), kind: it.kind, name: it.kind === "visual" ? "video" : it.kind, muted: false, clips: [] } as Track
+          seq.tracks.push(track)
+        }
+        const copy = JSON.parse(JSON.stringify(it.clip)) as AnyClip
+        copy.id = nid()
+        copy.at = round3(Math.max(0, at + (it.clip.at - base)))
+        ;(track.clips as AnyClip[]).push(copy)
+        created.push(copy.id)
+      }
+    })
+    set({ selected: created, primary: created.at(-1) ?? null })
+    return created
+  },
+
+  editPoints: () => {
+    const seq = get().seq
+    const pts = new Set<number>([0])
+    for (const t of seq.tracks) for (const c of t.clips as AnyClip[]) {
+      pts.add(round3(c.at))
+      pts.add(round3(c.at + clipLength(t, c)))
+    }
+    return [...pts].sort((a, b) => a - b)
+  },
+
+  setClipOrder: (trackId, toIndex) =>
+    get().edit((seq) => {
+      const i = seq.tracks.findIndex((t) => t.id === trackId)
+      if (i === -1) return
+      const [t] = seq.tracks.splice(i, 1)
+      seq.tracks.splice(Math.max(0, Math.min(seq.tracks.length, toIndex)), 0, t!)
+    }),
 
   select: (id, additive = false) =>
     set((s) => {

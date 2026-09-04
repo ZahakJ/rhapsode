@@ -5,6 +5,10 @@ import { EditedMedia } from "../compose/Stage.tsx"
 import { clamp, fmtTC } from "../util/time.ts"
 import { hasArabic } from "./fields.tsx"
 import { duration, useStudio } from "./studioStore.ts"
+import { ctxOnly } from "./ContextMenu.tsx"
+import { hooks } from "./commands.ts"
+import { toast } from "../components/Toasts.tsx"
+import { useUi, type MenuItem } from "./uiStore.ts"
 
 /**
  * The program monitor: an approximate playback of the sequence. At time t,
@@ -34,9 +38,63 @@ export function Monitor() {
   const primary = useStudio((s) => s.primary)
   const select = useStudio((s) => s.select)
   const stageRef = useRef<HTMLDivElement>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
   const D = duration(seq)
   const ratio = canvasRatio(seq, sources)
+  const tool = useUi((s) => s.tool)
+  const safe = useUi((s) => s.safeMargins)
+  const grid = useUi((s) => s.grid)
+  const captionsPreview = useUi((s) => s.captionsPreview)
+  const mz = useUi((s) => s.monitorZoom)
+  const mpan = useUi((s) => s.monitorPan)
+  const trackFlags = useUi((s) => s.trackFlags)
+  const [guides, setGuides] = useState<{ v: number[]; h: number[] }>({ v: [], h: [] })
+  const panRef = useRef<{ id: number; x0: number; y0: number; p: { x: number; y: number } } | null>(null)
+
+  // ⌘/ctrl + wheel zooms the monitor; the hand tool pans it
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      e.preventDefault()
+      const u = useUi.getState()
+      u.setMonitorZoom(u.monitorZoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15), u.monitorPan)
+    }
+    el.addEventListener("wheel", onWheel, { passive: false })
+    return () => el.removeEventListener("wheel", onWheel)
+  }, [])
+
+  // snapshot: draw the visible media layers onto a canvas (best effort — cues and crops are skipped)
+  useEffect(() => {
+    hooks.snapshot = () => {
+      const stage = stageRef.current
+      if (!stage) return
+      const cv = document.createElement("canvas")
+      cv.width = Math.round(size.w * 2)
+      cv.height = Math.round(size.h * 2)
+      const ctx = cv.getContext("2d")
+      if (!ctx) return
+      ctx.fillStyle = `#${useStudio.getState().seq.canvas.background}`
+      ctx.fillRect(0, 0, cv.width, cv.height)
+      const sr = stage.getBoundingClientRect()
+      for (const el of Array.from(stage.querySelectorAll<HTMLImageElement | HTMLVideoElement>("img.st-media, video.st-media"))) {
+        const r = el.getBoundingClientRect()
+        try {
+          ctx.globalAlpha = Number((el.closest(".st-layer") as HTMLElement | null)?.style.opacity || 1)
+          ctx.drawImage(el, ((r.left - sr.left) / sr.width) * cv.width, ((r.top - sr.top) / sr.height) * cv.height, (r.width / sr.width) * cv.width, (r.height / sr.height) * cv.height)
+        } catch {
+          /* tainted / not ready */
+        }
+      }
+      const a = document.createElement("a")
+      a.href = cv.toDataURL("image/png")
+      a.download = `frame-${fmtTC(useStudio.getState().playhead).replace(/[:.]/g, "-")}.png`
+      a.click()
+      toast("frame saved")
+    }
+  }, [size])
 
   useEffect(() => {
     const el = stageRef.current
@@ -58,10 +116,12 @@ export function Monitor() {
       const dt = (now - last) / 1000
       last = now
       const st = useStudio.getState()
-      const next = st.playhead + dt
-      if (next >= duration(st.seq)) {
-        st.setPlayhead(0)
+      const rate = useUi.getState().shuttle || 1
+      const next = st.playhead + dt * rate
+      if (next >= duration(st.seq) || next <= 0) {
+        st.setPlayhead(next <= 0 ? 0 : 0)
         st.setPlaying(false)
+        useUi.getState().setShuttle(0)
         return
       }
       st.setPlayhead(next)
@@ -74,8 +134,11 @@ export function Monitor() {
   const t = playhead
   const layers = useMemo(() => {
     const out: Array<{ track: string; clip: VisualClip; len: number }> = []
+    const solos = seq.tracks.filter((t) => trackFlags[t.id]?.solo)
+    const soloKinds = new Set<string>(solos.map((t) => t.kind))
+    const hidden = (t: { id: string; kind: string; muted: boolean }) => t.muted || (soloKinds.has(t.kind) && !solos.some((x) => x.id === t.id))
     for (const track of seq.tracks) {
-      if (track.kind !== "visual" || track.muted) continue
+      if (track.kind !== "visual" || hidden(track)) continue
       for (const clip of track.clips) {
         const src = sources[clip.source]
         if (!src) continue
@@ -84,31 +147,73 @@ export function Monitor() {
       }
     }
     return out
-  }, [seq, sources])
+  }, [seq, sources, trackFlags])
 
+  const soloKinds2 = useMemo(() => new Set<string>(seq.tracks.filter((t) => trackFlags[t.id]?.solo).map((t) => t.kind)), [seq, trackFlags])
+  const audible = (t: { id: string; kind: string; muted: boolean }) => !t.muted && (!soloKinds2.has(t.kind) || trackFlags[t.id]?.solo)
   const audios = useMemo(() => {
     const out: AudioClip[] = []
-    for (const track of seq.tracks) if (track.kind === "audio" && !track.muted) out.push(...track.clips)
+    for (const track of seq.tracks) if (track.kind === "audio" && audible(track)) out.push(...track.clips)
     return out
-  }, [seq])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seq, trackFlags])
 
   const cues = useMemo(() => {
     const out: Cue[] = []
-    for (const track of seq.tracks) if (track.kind === "text" && !track.muted) out.push(...track.clips)
+    for (const track of seq.tracks) if (track.kind === "text" && audible(track)) out.push(...track.clips)
     return out
-  }, [seq])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seq, trackFlags])
+
+  const monitorMenu = (): MenuItem[] => {
+    const u = useUi.getState()
+    return [
+      { kind: "sub", label: "Zoom", items: [
+        { kind: "item", label: "Fit", checked: u.monitorZoom === 1, run: () => u.setMonitorZoom(1) },
+        { kind: "item", label: "50%", checked: u.monitorZoom === 0.5, run: () => u.setMonitorZoom(0.5) },
+        { kind: "item", label: "100%", checked: u.monitorZoom === 2, run: () => u.setMonitorZoom(2) },
+        { kind: "item", label: "200%", checked: u.monitorZoom === 4, run: () => u.setMonitorZoom(4) },
+      ] },
+      { kind: "item", label: "Safe margins", checked: u.safeMargins, run: () => u.toggle("safeMargins") },
+      { kind: "item", label: "Grid", checked: u.grid, run: () => u.toggle("grid") },
+      { kind: "item", label: "Captions preview", checked: u.captionsPreview, run: () => u.toggle("captionsPreview") },
+      { kind: "sep" },
+      { kind: "item", label: "Snapshot frame (PNG)", run: () => hooks.snapshot() },
+    ]
+  }
 
   const active = (at: number, len: number) => t >= at && t < at + len
 
   return (
     <div className="st-monitor">
-      <div ref={stageRef} className="st-stage" style={{ aspectRatio: `${ratio}`, background: `#${seq.canvas.background}` }} onClick={() => select(null)}>
+      <div
+        ref={wrapRef}
+        className={`st-stagewrap${tool === "hand" ? " st-stagewrap--hand" : ""}`}
+        onPointerDown={(e) => {
+          if (tool !== "hand" || e.button !== 0) return
+          panRef.current = { id: e.pointerId, x0: e.clientX, y0: e.clientY, p: { ...mpan } }
+          e.currentTarget.setPointerCapture(e.pointerId)
+        }}
+        onPointerMove={(e) => {
+          const d = panRef.current
+          if (!d || d.id !== e.pointerId) return
+          useUi.getState().setMonitorZoom(mz, { x: d.p.x + (e.clientX - d.x0), y: d.p.y + (e.clientY - d.y0) })
+        }}
+        onPointerUp={() => (panRef.current = null)}
+        {...ctxOnly(monitorMenu)}
+      >
+      <div ref={stageRef} className="st-stage" style={{ aspectRatio: `${ratio}`, background: `#${seq.canvas.background}`, transform: mz !== 1 || mpan.x || mpan.y ? `translate(${mpan.x}px, ${mpan.y}px) scale(${mz})` : undefined }} onClick={() => select(null)}>
+        {grid && <div className="st-overlay st-overlay--grid" aria-hidden="true" />}
+        {safe && <div className="st-overlay st-overlay--safe" aria-hidden="true"><div className="st-overlay__action" /><div className="st-overlay__title" /></div>}
+        {guides.v.map((x) => <div key={`v${x}`} className="st-guide st-guide--v" style={{ left: `${x * 100}%` }} />)}
+        {guides.h.map((y) => <div key={`h${y}`} className="st-guide st-guide--h" style={{ top: `${y * 100}%` }} />)}
         {layers.map(({ clip, len }) =>
-          active(clip.at, len) ? <VisualLayer key={clip.id} clip={clip} len={len} src={sources[clip.source]!} t={t} size={size} playing={playing} selected={primary === clip.id} /> : null,
+          active(clip.at, len) ? <VisualLayer key={clip.id} clip={clip} len={len} src={sources[clip.source]!} t={t} size={size} playing={playing} selected={primary === clip.id} onGuides={setGuides} /> : null,
         )}
         {audios.map((a) => (active(a.at, a.out - a.in) ? <AudioLayer key={a.id} clip={a} src={sources[a.source]} t={t} playing={playing} /> : null))}
-        {cues.map((c) => (active(c.at, c.duration) ? <CueLayer key={c.id} cue={c} size={size} selected={primary === c.id} /> : null))}
+        {captionsPreview && cues.map((c) => (active(c.at, c.duration) ? <CueLayer key={c.id} cue={c} size={size} selected={primary === c.id} /> : null))}
         {layers.length === 0 && cues.length === 0 && <div className="st-stage__empty">drop media on the timeline, or hit “+ add” in the bin</div>}
+      </div>
       </div>
       <div className="st-monitor__bar">
         <button className="st-play" onClick={() => setPlaying(!playing)} aria-label={playing ? "pause" : "play"}>
@@ -118,6 +223,7 @@ export function Monitor() {
           <span className="st-tc__now">{fmtTC(t)}</span> <span className="st-tc__sep">/</span> {fmtTC(D)}
         </span>
         <input className="st-scrub" type="range" min={0} max={Math.max(0.001, D)} step={0.001} value={clamp(t, 0, D)} onChange={(e) => setPlayhead(Number(e.target.value))} aria-label="playhead" />
+        {mz !== 1 && <button className="st-tl__hb" onClick={() => useUi.getState().setMonitorZoom(1)} title="zoom to fit">{Math.round(mz * 50)}%</button>}
         <span className="rh-hint st-monitor__note">preview is approximate · the render is truth</span>
       </div>
     </div>
@@ -132,7 +238,7 @@ function fadeFactor(clip: { fadeIn: number; fadeOut: number; at: number }, len: 
   return f
 }
 
-function VisualLayer({ clip, len, src, t, size, playing, selected }: { clip: VisualClip; len: number; src: SourceDto; t: number; size: { w: number; h: number }; playing: boolean; selected: boolean }) {
+function VisualLayer({ clip, len, src, t, size, playing, selected, onGuides }: { clip: VisualClip; len: number; src: SourceDto; t: number; size: { w: number; h: number }; playing: boolean; selected: boolean; onGuides: (g: { v: number[]; h: number[] }) => void }) {
   const opacity = clip.opacity * fadeFactor(clip, len, t)
   const dims = editedDims({ width: src.width || 16, height: src.height || 9 }, clip.edit ?? null)
   const aspect = dims.width / dims.height
@@ -157,7 +263,7 @@ function VisualLayer({ clip, len, src, t, size, playing, selected }: { clip: Vis
       <EditedMedia source={src} edit={clip.edit ?? null} boxW={boxW} boxH={boxH} fit={clip.fit === "cover" ? "cover" : "contain"}>
         {media}
       </EditedMedia>
-      {selected && clip.fit === "free" && <FreeBoxHandles clip={clip} size={size} aspect={aspect} />}
+      {selected && clip.fit === "free" && <FreeBoxHandles clip={clip} size={size} aspect={aspect} onGuides={onGuides} />}
     </div>
   )
 }
@@ -265,7 +371,7 @@ function CueLayer({ cue, size, selected }: { cue: Cue; size: { w: number; h: num
   )
 }
 
-function FreeBoxHandles({ clip, size, aspect }: { clip: VisualClip; size: { w: number; h: number }; aspect: number }) {
+function FreeBoxHandles({ clip, size, aspect, onGuides }: { clip: VisualClip; size: { w: number; h: number }; aspect: number; onGuides: (g: { v: number[]; h: number[] }) => void }) {
   const drag = useRef<{ id: number; kind: "move" | "size"; x0: number; y0: number; box: { x: number; y: number; w: number } } | null>(null)
   const start = (kind: "move" | "size") => (e: React.PointerEvent<HTMLDivElement>) => {
     e.stopPropagation()
@@ -280,15 +386,29 @@ function FreeBoxHandles({ clip, size, aspect }: { clip: VisualClip; size: { w: n
     if (!d || d.id !== e.pointerId || !size.w) return
     const dx = (e.clientX - d.x0) / size.w
     const dy = (e.clientY - d.y0) / size.h
-    const box = d.kind === "move" ? { x: clamp(d.box.x + dx, -0.9, 0.95), y: clamp(d.box.y + dy, -0.9, 0.95), w: d.box.w } : { ...d.box, w: clamp(d.box.w + dx, 0.05, 2) }
+    let box = d.kind === "move" ? { x: clamp(d.box.x + dx, -0.9, 0.95), y: clamp(d.box.y + dy, -0.9, 0.95), w: d.box.w } : { ...d.box, w: clamp(d.box.w + dx, 0.05, 2) }
+    // smart guides: snap the box's edges and centre to the canvas edges and centre
+    if (d.kind === "move" && useStudio.getState().snap) {
+      const h = (box.w * (size.w / size.h)) / aspect
+      const tol = 0.012
+      const v: number[] = []
+      const hh: number[] = []
+      const candX: Array<[number, number]> = [[box.x, 0], [box.x + box.w, 1], [box.x + box.w / 2, 0.5]]
+      for (const [edge, target] of candX) if (Math.abs(edge - target) < tol) { box = { ...box, x: box.x + (target - edge) }; v.push(target); break }
+      const candY: Array<[number, number]> = [[box.y, 0], [box.y + h, 1], [box.y + h / 2, 0.5]]
+      for (const [edge, target] of candY) if (Math.abs(edge - target) < tol) { box = { ...box, y: box.y + (target - edge) }; hh.push(target); break }
+      onGuides({ v, h: hh })
+    }
     useStudio.getState().mutate((seq) => {
       for (const t of seq.tracks)
         if (t.kind === "visual")
           for (const c of t.clips) if (c.id === clip.id) c.box = box
     })
   }
-  const up = () => (drag.current = null)
-  void aspect
+  const up = () => {
+    drag.current = null
+    onGuides({ v: [], h: [] })
+  }
   return (
     <>
       <div className="st-layer__move" onPointerDown={start("move")} onPointerMove={move} onPointerUp={up} onPointerCancel={up} />

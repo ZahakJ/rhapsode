@@ -3,6 +3,10 @@ import type { AudioClip, Cue, Track, VisualClip } from "../../shared/sequence.ts
 import { toast } from "../components/Toasts.tsx"
 import { clamp, fmtTime, round3 } from "../util/time.ts"
 import { clipLength, contentEnd, duration, resolveCueOverlap, useStudio, type AnyClip } from "./studioStore.ts"
+import { contextMenuProps, ctxOnly } from "./ContextMenu.tsx"
+import { toItem } from "./MenuBar.tsx"
+import { byId } from "./commands.ts"
+import { useUi, type MenuItem } from "./uiStore.ts"
 
 /**
  * The multitrack timeline. Rows are tracks (top row = topmost visual track),
@@ -36,6 +40,26 @@ export function StudioTimeline() {
   const addTrack = useStudio((s) => s.addTrack)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [drag, setDrag] = useState<Drag | null>(null)
+  const tool = useUi((s) => s.tool)
+  const workArea = useUi((s) => s.workArea)
+  const markers = useUi((s) => s.markers)
+  const trackFlags = useUi((s) => s.trackFlags)
+  const pan = useRef<{ id: number; x0: number; left0: number } | null>(null)
+  const isLocked = (id: string) => !!trackFlags[id]?.locked
+
+  // zoom to fit the content (⌘\ / menu)
+  useEffect(() => {
+    const fit = () => {
+      const el = scrollRef.current
+      const st = useStudio.getState()
+      if (!el) return
+      const end = Math.max(1, contentEnd(st.seq), duration(st.seq))
+      st.setZoom(Math.max(6, (el.clientWidth - HEADER_W - 24) / end))
+      el.scrollLeft = 0
+    }
+    document.addEventListener("rh:zoom-fit", fit)
+    return () => document.removeEventListener("rh:zoom-fit", fit)
+  }, [])
 
   const D = duration(seq)
   const end = Math.max(D, contentEnd(seq))
@@ -91,6 +115,31 @@ export function StudioTimeline() {
   const onClipDown = (e: React.PointerEvent, track: Track, clip: AnyClip) => {
     if (e.button !== 0) return
     e.stopPropagation()
+    if (isLocked(track.id)) {
+      select(clip.id, false)
+      toast("that track is locked", "warn")
+      return
+    }
+    if (tool === "razor") {
+      useStudio.getState().splitAt(clip.id, tOf(e.clientX))
+      return
+    }
+    if (tool === "hand") return
+    if (e.altKey) {
+      // ⌥-drag duplicates: drag the copy instead
+      const st0 = useStudio.getState()
+      st0.duplicateClips([clip.id])
+      const dupId = useStudio.getState().primary
+      const f = dupId ? (useStudio.getState().seq.tracks.find((t) => t.id === track.id)?.clips as AnyClip[] | undefined)?.find((c) => c.id === dupId) : undefined
+      if (f) {
+        useStudio.getState().mutate((seq) => {
+          const tr = seq.tracks.find((t) => t.id === track.id)
+          const c = tr ? (tr.clips as AnyClip[]).find((x) => x.id === dupId) : undefined
+          if (c) c.at = clip.at
+        })
+        clip = { ...f, at: clip.at }
+      }
+    }
     const target = e.currentTarget as HTMLElement
     const rect = target.getBoundingClientRect()
     const edge = e.clientX - rect.left < 8 ? "l" : rect.right - e.clientX < 8 ? "r" : null
@@ -233,6 +282,51 @@ export function StudioTimeline() {
     if (!made) toast("that source does not fit on this track", "warn")
   }
 
+  const cmd = (id: string): MenuItem => toItem(byId.get(id)!)
+  const laneMenu = (track: Track | null): MenuItem[] => {
+    const st = useStudio.getState()
+    const u = useUi.getState()
+    const items: MenuItem[] = [
+      { kind: "item", label: "Paste at playhead", shortcut: "Mod+KeyV", disabled: !u.clipboard.length, run: () => st.pasteAt(u.clipboard, st.playhead, track?.id) },
+      { kind: "sub", label: "Add track here", items: [
+        { kind: "item", label: "video", run: () => st.addTrack("visual") },
+        { kind: "item", label: "audio", run: () => st.addTrack("audio") },
+        { kind: "item", label: "text", run: () => st.addTrack("text") },
+      ] },
+      { kind: "sep" },
+      cmd("seq.zoomFit"),
+      cmd("seq.marker"),
+      cmd("seq.clearWork"),
+    ]
+    return items
+  }
+  const clipMenuProps = (track: Track, clip: AnyClip) =>
+    ctxOnly((): MenuItem[] => {
+      const st = useStudio.getState()
+      if (!st.selected.includes(clip.id)) st.select(clip.id)
+      const src = "source" in clip ? sources[(clip as VisualClip).source] : undefined
+      const items: MenuItem[] = [cmd("edit.cut"), cmd("edit.copy"), cmd("edit.duplicate"), cmd("edit.split"), { kind: "sep" }, cmd("edit.rippleDelete"), cmd("edit.delete"), { kind: "sep" }]
+      if (track.kind === "visual") {
+        items.push({ kind: "sub", label: "Placement", items: [cmd("clip.fit"), cmd("clip.fill"), cmd("clip.free")] })
+        items.push({ kind: "sub", label: "Fades", items: [cmd("clip.fade0"), cmd("clip.fade025"), cmd("clip.fade05"), cmd("clip.fade1")] })
+        if (src?.media === "image") items.push({ kind: "sub", label: "Pan & zoom", items: [cmd("clip.kbNone"), cmd("clip.kbIn"), cmd("clip.kbOut"), cmd("clip.kbRight"), cmd("clip.kbLeft")] })
+        items.push(cmd("clip.crop"))
+        items.push({ kind: "sep" })
+      }
+      if (track.kind === "text") {
+        const c = clip as Cue
+        items.push({ kind: "item", label: "Edit here", run: () => { useUi.getState().setFocused("subtitles"); useUi.getState().openPanel("subtitles") } })
+        items.push({ kind: "sub", label: "Style", items: (["outline", "clean", "box"] as const).map((s2) => ({ kind: "item" as const, label: s2, checked: c.style === s2, run: () => st.patchClip(c.id, { style: s2 }) })) })
+        items.push({ kind: "sub", label: "Size", items: [0.04, 0.055, 0.07, 0.09].map((sz) => ({ kind: "item" as const, label: `${Math.round(sz * 100)}%`, checked: Math.abs(c.size - sz) < 0.001, run: () => st.patchClip(c.id, { size: sz }) })) })
+        items.push({ kind: "sep" })
+      }
+      items.push({ kind: "item", label: "Rename track…", run: () => document.dispatchEvent(new CustomEvent("rh:rename-track", { detail: track.id })) })
+      items.push(cmd("clip.trackUp"), cmd("clip.trackDown"), cmd("clip.front"), cmd("clip.back"))
+      items.push({ kind: "sep" })
+      items.push({ kind: "item", label: useUi.getState().trackFlags[track.id]?.locked ? "Unlock track" : "Lock track", run: () => useUi.getState().toggleFlag(track.id, "locked") })
+      return items
+    })
+
   const ticks = useMemo(() => {
     const step = niceStep(zoom)
     const out: number[] = []
@@ -255,7 +349,28 @@ export function StudioTimeline() {
           <input type="range" min={6} max={400} step={1} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} />
         </label>
       </div>
-      <div ref={scrollRef} className="st-tl__scroll" onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
+      <div
+        ref={scrollRef}
+        className={`st-tl__scroll st-tl__scroll--${tool}`}
+        onPointerDown={(e) => {
+          if (tool !== "hand" || e.button !== 0) return
+          pan.current = { id: e.pointerId, x0: e.clientX, left0: e.currentTarget.scrollLeft }
+          e.currentTarget.setPointerCapture(e.pointerId)
+        }}
+        onPointerMove={(e) => {
+          if (pan.current && pan.current.id === e.pointerId) {
+            e.currentTarget.scrollLeft = pan.current.left0 - (e.clientX - pan.current.x0)
+            return
+          }
+          onMove(e)
+        }}
+        onPointerUp={(e) => {
+          if (pan.current?.id === e.pointerId) pan.current = null
+          onUp(e)
+        }}
+        onPointerCancel={onUp}
+        {...ctxOnly(() => laneMenu(null))}
+      >
         <div className="st-tl__inner" style={{ width: width + HEADER_W }}>
           {/* ruler */}
           <div className="st-ruler-row">
@@ -274,13 +389,43 @@ export function StudioTimeline() {
                   <span className="mono">{fmtTime(t, false)}</span>
                 </span>
               ))}
+              {workArea && <span className="st-ruler__work" style={{ left: xOf(workArea.in), width: Math.max(2, xOf(workArea.out - workArea.in)) }} title="work area (I / O) — only this range renders" />}
+              {markers.map((m) => (
+                <span
+                  key={m.id}
+                  className="st-ruler__marker"
+                  style={{ left: xOf(m.at), background: `#${m.color}` }}
+                  title={m.label || fmtTime(m.at)}
+                  onPointerDown={(e) => {
+                    e.stopPropagation()
+                    setPlayhead(m.at)
+                    if (e.shiftKey) document.dispatchEvent(new CustomEvent("rh:edit-marker"))
+                  }}
+                >
+                  {m.label && <span className="st-ruler__mlabel">{m.label}</span>}
+                </span>
+              ))}
               <span className="st-ruler__end" style={{ left: xOf(D) }} title="sequence end" />
             </div>
           </div>
           {/* tracks */}
           {rows.map((track) => (
-            <div key={track.id} className={`st-row st-row--${track.kind}${selectedTrack === track.id ? " st-row--sel" : ""}`} style={{ height: ROW_H[track.kind] }}>
-              <TrackHead track={track} />
+            <div
+              key={track.id}
+              className={`st-row st-row--${track.kind}${selectedTrack === track.id ? " st-row--sel" : ""}${isLocked(track.id) ? " st-row--locked" : ""}${trackFlags[track.id]?.solo ? " st-row--solo" : ""}`}
+              style={{ height: ROW_H[track.kind] }}
+              onDragOver={(e) => {
+                if (e.dataTransfer.types.includes("application/x-rhapsode-track")) e.preventDefault()
+              }}
+              onDrop={(e) => {
+                const from = e.dataTransfer.getData("application/x-rhapsode-track")
+                if (!from || from === track.id) return
+                e.preventDefault()
+                const idx = seq.tracks.findIndex((t) => t.id === track.id)
+                useStudio.getState().setClipOrder(from, idx)
+              }}
+            >
+              <TrackHead track={track} index={seq.tracks.filter((t) => t.kind === track.kind).indexOf(track) + 1} />
               <div
                 className="st-row__lane"
                 data-track={track.id}
@@ -294,6 +439,7 @@ export function StudioTimeline() {
                   if (e.dataTransfer.types.includes("application/x-rhapsode-source")) e.preventDefault()
                 }}
                 onDrop={(e) => onRowDrop(e, track)}
+                {...contextMenuProps(() => laneMenu(track))}
               >
                 {(track.clips as AnyClip[]).map((clip) => {
                   const len = clipLength(track, clip)
@@ -307,6 +453,7 @@ export function StudioTimeline() {
                       style={{ left: xOf(clip.at), width: Math.max(6, xOf(len)) }}
                       onPointerDown={(e) => onClipDown(e, track, clip)}
                       onClick={(e) => e.stopPropagation()}
+                      {...clipMenuProps(track, clip)}
                       onDoubleClick={(e) => {
                         e.stopPropagation()
                         setPlayhead(clip.at)
@@ -333,17 +480,53 @@ export function StudioTimeline() {
   )
 }
 
-function TrackHead({ track }: { track: Track }) {
+function TrackHead({ track, index }: { track: Track; index: number }) {
   const patchTrack = useStudio((s) => s.patchTrack)
   const removeTrack = useStudio((s) => s.removeTrack)
   const moveTrack = useStudio((s) => s.moveTrack)
+  const flags = useUi((s) => s.trackFlags[track.id])
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(track.name)
   useEffect(() => setName(track.name), [track.name])
-  const glyph = track.kind === "visual" ? "▣" : track.kind === "audio" ? "♪" : "T"
+  useEffect(() => {
+    const onRename = (e: Event) => {
+      if ((e as CustomEvent<string>).detail === track.id) setEditing(true)
+    }
+    document.addEventListener("rh:rename-track", onRename)
+    return () => document.removeEventListener("rh:rename-track", onRename)
+  }, [track.id])
+  const glyph = track.kind === "visual" ? `V${index}` : track.kind === "audio" ? `A${index}` : `T${index}`
+  const st = useStudio.getState
+  const menu = (): MenuItem[] => [
+    { kind: "item", label: "Rename", run: () => setEditing(true) },
+    { kind: "item", label: track.muted ? "Unmute" : "Mute", run: () => patchTrack(track.id, { muted: !track.muted }) },
+    { kind: "item", label: flags?.solo ? "Unsolo" : "Solo (preview + render)", run: () => useUi.getState().toggleFlag(track.id, "solo") },
+    { kind: "item", label: flags?.locked ? "Unlock" : "Lock", run: () => useUi.getState().toggleFlag(track.id, "locked") },
+    { kind: "sep" },
+    { kind: "item", label: "Move up (toward the top)", run: () => moveTrack(track.id, 1) },
+    { kind: "item", label: "Move down", run: () => moveTrack(track.id, -1) },
+    { kind: "item", label: "Bring to front", run: () => st().trackToEdge(track.id, "front") },
+    { kind: "item", label: "Send to back", run: () => st().trackToEdge(track.id, "back") },
+    { kind: "sep" },
+    { kind: "item", label: "Add track above", run: () => { const id = st().addTrack(track.kind); const i = st().seq.tracks.findIndex((t) => t.id === track.id); st().setClipOrder(id, i + 1) } },
+    { kind: "item", label: "Add track below", run: () => { const id = st().addTrack(track.kind); const i = st().seq.tracks.findIndex((t) => t.id === track.id); st().setClipOrder(id, i) } },
+    { kind: "item", label: "Select all clips", run: () => st().selectAllOnTrack(track.id) },
+    { kind: "sep" },
+    { kind: "item", label: "Delete track", run: () => removeTrack(track.id) },
+  ]
   return (
-    <div className="st-tl__head">
-      <span className="st-tl__glyph mono" title={track.kind}>{glyph}</span>
+    <div
+      className="st-tl__head"
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData("application/x-rhapsode-track", track.id)
+        e.dataTransfer.effectAllowed = "move"
+      }}
+      title="drag to reorder · right-click for more"
+      {...contextMenuProps(menu)}
+    >
+      <span className="st-tl__grip" aria-hidden="true">⋮⋮</span>
+      <span className="st-tl__glyph mono" title={`${track.kind} · stack position ${index}`}>{glyph}</span>
       {editing ? (
         <input
           className="st-tl__name-input"
@@ -366,6 +549,8 @@ function TrackHead({ track }: { track: Track }) {
       )}
       <span className="st-tl__headbtns">
         <button className={`st-tl__hb${track.muted ? " st-tl__hb--on" : ""}`} onClick={() => patchTrack(track.id, { muted: !track.muted })} title={track.muted ? "unmute" : "mute"}>M</button>
+        <button className={`st-tl__hb${flags?.solo ? " st-tl__hb--on" : ""}`} onClick={() => useUi.getState().toggleFlag(track.id, "solo")} title="solo">S</button>
+        <button className={`st-tl__hb${flags?.locked ? " st-tl__hb--on" : ""}`} onClick={() => useUi.getState().toggleFlag(track.id, "locked")} title={flags?.locked ? "unlock" : "lock"}>{flags?.locked ? "🔒" : "🔓"}</button>
         <button className="st-tl__hb" onClick={() => moveTrack(track.id, 1)} title="move up (toward the top)">↑</button>
         <button className="st-tl__hb" onClick={() => moveTrack(track.id, -1)} title="move down">↓</button>
         <button className="st-tl__hb st-tl__hb--danger" onClick={() => removeTrack(track.id)} title="delete track">✕</button>
