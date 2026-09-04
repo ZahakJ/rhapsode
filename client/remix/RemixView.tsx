@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { api, ApiError } from "../api/client.ts"
 import { useAuth } from "../store/authStore.ts"
 import { useCompose } from "../store/composeStore.ts"
+import { useStudio } from "../studio/studioStore.ts"
 import { InviteKeyDialog } from "../components/InviteKeyDialog.tsx"
 import { toast } from "../components/Toasts.tsx"
 import { navigate } from "../router.ts"
@@ -18,8 +19,15 @@ export function RemixView({ slug }: { slug: string }) {
     let live = true
     api
       .getRecipe(slug)
-      .then(({ recipe, sources }) => {
+      .then(({ recipe, sequence, title, sources }) => {
         if (!live) return
+        if (sequence) {
+          useStudio.getState().setSequence(sequence, title ?? "", sources)
+          toast("sequence loaded — remix away in the studio")
+          navigate("#/studio")
+          return
+        }
+        if (!recipe) throw new Error("that render carries no recipe")
         useCompose.getState().loadRecipe(recipe, sources)
         const missing = [recipe.base.source, recipe.overlay.source].filter((id) => !sources.some((s) => s.id === id))
         if (missing.length) toast("a source was swept — re-add it", "warn")

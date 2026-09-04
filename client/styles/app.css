@@ -1629,3 +1629,12 @@
     height: 44px;
   }
 }
+
+/* a sound in the trimmer: its waveform card stands in for the picture */
+.rh-trim__video--audio .rh-trim__wave {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  cursor: pointer;
+}

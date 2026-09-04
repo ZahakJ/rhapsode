@@ -8,6 +8,7 @@ export type Route =
   | { view: "wall" }
   | { view: "result"; slug: string }
   | { view: "remix"; slug: string }
+  | { view: "studio"; slug?: string }
 
 export function parseHash(hash: string): Route {
   const h = hash.replace(/^#\/?/, "")
@@ -15,6 +16,10 @@ export function parseHash(hash: string): Route {
   if (h.startsWith("r/")) {
     const slug = decodeURIComponent(h.slice(2))
     if (slug) return { view: "result", slug }
+  }
+  if (h === "studio" || h.startsWith("studio/")) {
+    const slug = decodeURIComponent(h.slice("studio/".length))
+    return slug ? { view: "studio", slug } : { view: "studio" }
   }
   if (h.startsWith("remix/")) {
     const slug = decodeURIComponent(h.slice(6))
