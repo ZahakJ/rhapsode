@@ -241,6 +241,44 @@ d("app (integration)", () => {
     await waitJob(job.id)
   })
 
+  it("renders a studio sequence: photo montage, overlapping clip, music, bilingual cues", async () => {
+    // the image was deleted by the remix test above — bring it back
+    const re = (await (await upload(png, "img2.png")).json()) as { source: SourceDto; job: JobDto }
+    expect((await waitJob(re.job.id)).status).toBe("done")
+    img = (await (await app.request(`/api/sources/${re.source.id}`, { headers: H })).json()) as SourceDto
+    const sequence = {
+      v: 1,
+      canvas: { aspect: "9:16", background: "111111" },
+      tracks: [
+        { id: "v1", kind: "visual", clips: [
+          { id: "p1", source: img.id, at: 0, duration: 1.5, fadeOut: 0.4, kenBurns: { from: { x: 0, y: 0, w: 1 }, to: { x: 0.2, y: 0.2, w: 0.6 } } },
+          { id: "c1", source: base.id, at: 1.1, duration: 1.4, in: 0.2, fadeIn: 0.4 },
+        ] },
+        { id: "v2", kind: "visual", clips: [{ id: "c2", source: ov.id, at: 1.5, duration: 1, fit: "free", box: { x: 0.5, y: 0.1, w: 0.4 }, opacity: 0.85, volume: 0 }] },
+        { id: "a1", kind: "audio", clips: [{ id: "m1", source: ov.id, at: 0, in: 0, out: 2, gain: 0.6, fadeOut: 0.5 }] },
+        { id: "t1", kind: "text", clips: [{ id: "x1", at: 0.2, duration: 2, text: "montage", sub: "مونتاج", style: "box" }] },
+      ],
+    }
+    const res = await app.request("/api/renders", { method: "POST", headers: { ...H, "content-type": "application/json" }, body: JSON.stringify({ sequence, title: "studio" }) })
+    expect(res.status, await res.clone().text()).toBe(202)
+    const { job, slug } = (await res.json()) as { job: JobDto; slug: string }
+    const done = await waitJob(job.id)
+    expect(done.status, done.error ?? "").toBe("done")
+    const r = done.result as RenderDto
+    expect(r.width).toBe(1080)
+    expect(r.height).toBe(1920)
+    expect(r.duration).toBeGreaterThan(2.4)
+    expect(r.duration).toBeLessThan(2.6)
+    const remix = (await (await app.request(`/api/renders/${slug}/recipe`, { headers: H })).json()) as { sequence?: { tracks: unknown[] }; recipe?: unknown; sources: SourceDto[] }
+    expect(remix.sequence?.tracks).toHaveLength(4)
+    expect(remix.recipe).toBeUndefined()
+    expect(remix.sources.map((s) => s.id).sort()).toEqual([img.id, base.id, ov.id].sort())
+    // a bad sequence explains itself in sequence terms
+    const bad = await app.request("/api/renders", { method: "POST", headers: { ...H, "content-type": "application/json" }, body: JSON.stringify({ sequence: { v: 1, tracks: [{ id: "t", kind: "visual", clips: [{ id: "t", source: img.id, at: 0, duration: 1 }] }] } }) })
+    expect(bad.status).toBe(422)
+    expect(((await bad.json()) as { error: string }).error).toContain("sequence")
+  })
+
   it("streams job events over SSE", async () => {
     const recipe = { v: 1, base: { kind: "video", source: base.id, in: 0, out: 1 }, overlay: { source: ov.id, in: 0, out: 1 } }
     const res = await app.request("/api/renders", { method: "POST", headers: { ...H, "content-type": "application/json" }, body: JSON.stringify({ recipe }) })

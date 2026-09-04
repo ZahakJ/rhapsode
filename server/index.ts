@@ -18,6 +18,11 @@ for (const [name, p] of [["DATA_DIR", config.dataDir], ["FONT_PATH", config.font
 
 const encoder = await detectEncoder(config.renderEncoder)
 const fontProblem = await selfTestDrawtext(config.fontPath)
+const fontsDirOk = SAFE_PATH.test(config.fontsDir)
+if (!fontsDirOk) {
+  console.error(`[rhapsode] FONTS_DIR "${config.fontsDir}" contains characters ffmpeg filter strings cannot carry`)
+  process.exit(1)
+}
 const ytdlp = await ytdlpVersion()
 console.log(`[rhapsode] encoder ${encoder}${config.renderEncoder ? " (forced)" : ""} · yt-dlp ${ytdlp ?? "MISSING"}`)
 if (fontProblem) console.warn(`[rhapsode] ⚠ caption font failed to load — captions will fail at render time: ${fontProblem}`)
