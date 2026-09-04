@@ -1,7 +1,7 @@
 import { runProc } from "../proc.ts"
 
 export type Probe = {
-  media: "video" | "image"
+  media: "video" | "image" | "audio"
   duration: number
   /** display dimensions (rotation applied) */
   width: number
@@ -38,8 +38,23 @@ export async function ffprobe(file: string, signal?: AbortSignal): Promise<Probe
   const streams = json.streams ?? []
   const v = streams.find((s) => s.codec_type === "video" && !s.disposition?.attached_pic)
   const a = streams.find((s) => s.codec_type === "audio")
-  if (!v || !v.width || !v.height) throw new Error("no decodable video or image stream")
   const formatName = json.format?.format_name ?? ""
+  if ((!v || !v.width || !v.height) && a) {
+    // music, voice notes, podcasts: no picture, or only cover art
+    return {
+      media: "audio",
+      duration: Number(json.format?.duration ?? 0) || 0,
+      width: 0,
+      height: 0,
+      fps: 0,
+      hasAudio: true,
+      vcodec: null,
+      acodec: a.codec_name ?? null,
+      rotation: 0,
+      bytes: Number(json.format?.size ?? 0) || 0,
+    }
+  }
+  if (!v || !v.width || !v.height) throw new Error("no decodable video, image or audio stream")
   const isImage = formatName.split(",").some((f) => IMAGE_FORMATS.has(f)) || (!json.format?.duration && !a)
   const rotation = readRotation(v)
   const swap = Math.abs(rotation) % 180 === 90

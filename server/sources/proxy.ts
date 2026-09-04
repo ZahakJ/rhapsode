@@ -42,6 +42,35 @@ export async function makeVideoProxy(src: string, out: string, probe: Probe, opt
   })
 }
 
+/** Audio-only sources get an aac proxy the browser can scrub and a waveform card. */
+export async function makeAudioProxy(src: string, out: string, probe: Probe, opts: ProxyOpts): Promise<void> {
+  const dur = probe.duration || 1
+  await runProc(
+    "ffmpeg",
+    ["-hide_banner", "-nostdin", "-loglevel", "error", "-nostats", "-y", "-progress", "pipe:1", "-i", src, "-vn", "-sn", "-dn",
+      "-map", "0:a:0", "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "48000", "-map_metadata", "-1", "-movflags", "+faststart", out],
+    {
+      timeoutMs: opts.timeoutMs ?? 30 * 60_000,
+      signal: opts.signal,
+      onStdoutLine: (line) => {
+        const p = parseProgressLine(line)
+        if (p.outTimeS !== undefined) opts.onProgress?.(Math.min(0.99, p.outTimeS / dur))
+        if (p.end) opts.onProgress?.(1)
+      },
+    },
+  )
+}
+
+export async function makeWaveformThumb(src: string, out: string, signal?: AbortSignal): Promise<void> {
+  await runProc(
+    "ffmpeg",
+    ["-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-i", src,
+      "-filter_complex", "[0:a]aformat=channel_layouts=mono,showwavespic=s=640x360:colors=0xff9f43:scale=sqrt[w];color=c=0x12151c:s=640x360[bg];[bg][w]overlay=format=auto,format=yuvj420p",
+      "-frames:v", "1", "-q:v", "4", out],
+    { timeoutMs: 120_000, signal },
+  )
+}
+
 export async function makeImageProxy(src: string, out: string, signal?: AbortSignal): Promise<void> {
   await runProc(
     "ffmpeg",

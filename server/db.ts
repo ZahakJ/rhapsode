@@ -76,6 +76,40 @@ export const MIGRATIONS: string[] = [
     );
     CREATE INDEX jobs_status ON jobs(status, created_at);
   `,
+  // v2: audio-only sources. Widening a CHECK means rebuilding the table;
+  // foreign_keys stays OFF across the swap so render_sources' REFERENCES is
+  // not rewritten to the scratch name and no implicit deletes fire.
+  `
+    PRAGMA foreign_keys = OFF;
+    CREATE TABLE sources_v2 (
+      id           TEXT PRIMARY KEY,
+      kind         TEXT NOT NULL CHECK (kind IN ('url','upload')),
+      media        TEXT NOT NULL CHECK (media IN ('video','image','audio')),
+      status       TEXT NOT NULL CHECK (status IN ('pending','ready','failed')),
+      url          TEXT,
+      title        TEXT NOT NULL DEFAULT '',
+      ext          TEXT NOT NULL DEFAULT '',
+      duration     REAL,
+      width        INTEGER,
+      height       INTEGER,
+      fps          REAL,
+      has_audio    INTEGER NOT NULL DEFAULT 0,
+      window_start REAL,
+      window_end   REAL,
+      sha256       TEXT,
+      bytes        INTEGER NOT NULL DEFAULT 0,
+      error        TEXT,
+      job_id       TEXT,
+      created_at   INTEGER NOT NULL,
+      last_used_at INTEGER NOT NULL
+    );
+    INSERT INTO sources_v2 SELECT * FROM sources;
+    DROP TABLE sources;
+    ALTER TABLE sources_v2 RENAME TO sources;
+    CREATE INDEX sources_sha ON sources(sha256);
+    CREATE INDEX sources_created ON sources(created_at);
+    PRAGMA foreign_keys = ON;
+  `,
 ]
 
 function migrate(db: DatabaseSync): void {

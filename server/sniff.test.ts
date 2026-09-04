@@ -65,3 +65,15 @@ describe("sniff — transcodable containers", () => {
     expect(sniff(mk("3gp4"))?.ext).toBe("3gp")
   })
 })
+
+describe("sniff — audio", () => {
+  const b = (bytes: number[]) => new Uint8Array([...bytes, ...new Array(16 - bytes.length).fill(0)])
+  it("recognises mp3, m4a, ogg, flac, wav", () => {
+    expect(sniff(new Uint8Array([0x49, 0x44, 0x33, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]))?.ext).toBe("mp3")
+    expect(sniff(b([0xff, 0xfb, 0x90, 0x64]))?.ext).toBe("mp3")
+    expect(sniff(new Uint8Array([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x4d, 0x34, 0x41, 0x20, 0, 0, 0, 0]))?.ext).toBe("m4a")
+    expect(sniff(b([0x4f, 0x67, 0x67, 0x53]))?.ext).toBe("ogg")
+    expect(sniff(b([0x66, 0x4c, 0x61, 0x43]))?.ext).toBe("flac")
+    expect(sniff(new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x41, 0x56, 0x45, 0, 0, 0, 0]))?.ext).toBe("wav")
+  })
+})

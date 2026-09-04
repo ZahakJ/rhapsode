@@ -18,7 +18,7 @@ import { CANVAS, SOURCE_MAX_EDGE, editedDims, outputDurationOf, type Recipe, typ
 export type SourceInfo = {
   id: string
   path: string
-  media: "video" | "image"
+  media: "video" | "image" | "audio"
   duration: number
   width: number
   height: number
@@ -103,7 +103,7 @@ export function buildArgs(input: BuildInput): BuildOutput {
   const ov = input.sources[recipe.overlay.source]
   if (!base) throw new Error(`unknown base source ${recipe.base.source}`)
   if (!ov) throw new Error(`unknown overlay source ${recipe.overlay.source}`)
-  if (ov.media !== "video") throw new Error("overlay must be a video")
+  if (ov.media !== "video" && !(ov.media === "audio" && recipe.mode.kind === "dub")) throw new Error("overlay must be a video (or a sound, for a dub)")
   if (recipe.base.kind === "video" && base.media !== "video") throw new Error("base kind mismatch")
   if (recipe.base.kind === "image" && base.media !== "image") throw new Error("base kind mismatch")
 

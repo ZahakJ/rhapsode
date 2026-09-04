@@ -105,7 +105,7 @@ export function sourcesRoutes(store: Store, config: Config, queue: JobQueue): Ho
               if (head.length >= 4096 || total === declared) {
                 sniffed = sniff(head)
                 if (!sniffed) {
-                  rejected = { status: 415, error: "unsupported file — use mp4, mov, webm, jpg, png or webp" }
+                  rejected = { status: 415, error: "unsupported file — video (mp4, mov, webm), audio (mp3, m4a, wav, ogg, flac) or a jpg/png/webp" }
                   throw new Error("unsupported")
                 }
               }
@@ -116,7 +116,7 @@ export function sourcesRoutes(store: Store, config: Config, queue: JobQueue): Ho
           if (!sniffed) {
             sniffed = sniff(head)
             if (!sniffed) {
-              rejected = { status: 415, error: "unsupported file — use mp4, mov, webm, jpg, png or webp" }
+              rejected = { status: 415, error: "unsupported file — video (mp4, mov, webm), audio (mp3, m4a, wav, ogg, flac) or a jpg/png/webp" }
               throw new Error("unsupported")
             }
           }

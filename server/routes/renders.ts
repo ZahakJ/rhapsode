@@ -70,7 +70,8 @@ export function crossCheck(store: Store, recipe: Recipe, config: Config): string
   const ov = store.sourceById(recipe.overlay.source)
   if (!base || base.status !== "ready") return "the base source is not ready"
   if (!ov || ov.status !== "ready") return "the clip source is not ready"
-  if (ov.media !== "video") return "the clip on top must be a video"
+  if (ov.media === "image") return "the clip on top must be a video or a sound"
+  if (ov.media === "audio" && recipe.mode.kind !== "dub") return "a sound can only be dubbed — switch to dub"
   if (recipe.base.kind === "video") {
     if (base.media !== "video") return "the base is an image, not a video"
     if (recipe.base.out > (base.duration ?? 0) + 0.05) return "base out point is past the end"
@@ -118,6 +119,7 @@ export function crossCheckSequence(store: Store, seq: Sequence, config: Config):
       for (const c of t.clips) {
         const s = store.sourceById(c.source)
         if (!s || s.status !== "ready") return `a clip's source is not ready (${c.id})`
+        if (s.media === "audio") return `${s.title || c.id} is a sound — put it on an audio track`
         if (s.media === "video" && c.in >= (s.duration ?? 0)) return `${s.title || c.id}: in point is past the end`
       }
     }

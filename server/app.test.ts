@@ -279,6 +279,45 @@ d("app (integration)", () => {
     expect(((await bad.json()) as { error: string }).error).toContain("sequence")
   })
 
+  it("accepts audio-only uploads and uses them as dub sound and studio music", async () => {
+    const fx = path.join(dataDir, "fx")
+    execFileSync("ffmpeg", ["-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=f=330:d=3", "-c:a", "pcm_s16le", `${fx}/tone.wav`], { stdio: "pipe" })
+    const res = await upload(fs.readFileSync(`${fx}/tone.wav`), "tone.wav")
+    expect(res.status, await res.clone().text()).toBe(202)
+    const { source, job } = (await res.json()) as { source: SourceDto; job: JobDto }
+    expect(source.media).toBe("audio")
+    const done = await waitJob(job.id)
+    expect(done.status, done.error ?? "").toBe("done")
+    const snd = (await (await app.request(`/api/sources/${source.id}`, { headers: H })).json()) as SourceDto
+    expect(snd.media).toBe("audio")
+    expect(snd.hasAudio).toBe(true)
+    expect(snd.duration).toBeGreaterThan(2.9)
+    expect(snd.proxyUrl).toBe(`/s/${snd.id}/proxy.m4a`)
+    expect((await app.request(snd.proxyUrl!)).headers.get("content-type")).toBe("audio/mp4")
+    expect((await app.request(snd.thumbUrl!)).status).toBe(200)
+
+    // a sound can be the clip on top of a photo — dub only
+    const post = (body: unknown) => app.request("/api/renders", { method: "POST", headers: { ...H, "content-type": "application/json" }, body: JSON.stringify(body) })
+    const pip = await post({ recipe: { v: 1, base: { kind: "image", source: img.id }, overlay: { source: snd.id, in: 0, out: 2 }, mode: { kind: "pip", box: { x: 0, y: 0, w: 0.5 } } } })
+    expect(pip.status).toBe(422)
+    const dub = await post({ recipe: { v: 1, base: { kind: "image", source: img.id }, overlay: { source: snd.id, in: 0.5, out: 2 } } })
+    expect(dub.status, await dub.clone().text()).toBe(202)
+    const dj = await waitJob(((await dub.json()) as { job: JobDto }).job.id)
+    expect(dj.status, dj.error ?? "").toBe("done")
+    expect((dj.result as RenderDto).duration).toBeGreaterThan(1.4)
+
+    // and music on a studio audio track; never on a visual track
+    const onVisual = await post({ sequence: { v: 1, tracks: [{ id: "v", kind: "visual", clips: [{ id: "c", source: snd.id, at: 0, duration: 1 }] }] } })
+    expect(onVisual.status).toBe(422)
+    const seq = await post({ sequence: { v: 1, tracks: [
+      { id: "v", kind: "visual", clips: [{ id: "c", source: img.id, at: 0, duration: 1.2 }] },
+      { id: "a", kind: "audio", clips: [{ id: "m", source: snd.id, at: 0, in: 0, out: 1.2, fadeOut: 0.3 }] },
+    ] } })
+    expect(seq.status, await seq.clone().text()).toBe(202)
+    const sj = await waitJob(((await seq.json()) as { job: JobDto }).job.id)
+    expect(sj.status, sj.error ?? "").toBe("done")
+  })
+
   it("streams job events over SSE", async () => {
     const recipe = { v: 1, base: { kind: "video", source: base.id, in: 0, out: 1 }, overlay: { source: ov.id, in: 0, out: 1 } }
     const res = await app.request("/api/renders", { method: "POST", headers: { ...H, "content-type": "application/json" }, body: JSON.stringify({ recipe }) })
