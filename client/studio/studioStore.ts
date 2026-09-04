@@ -273,6 +273,7 @@ export const useStudio = create<StudioState>()((set, get) => ({
   addCue: (opts = {}) => {
     const s = get()
     let id: string | null = null
+    let placedAt = s.playhead
     s.edit((seq) => {
       let track = opts.trackId ? seq.tracks.find((t) => t.id === opts.trackId && t.kind === "text") : undefined
       if (!track) track = seq.tracks.find((t) => t.kind === "text")
@@ -281,9 +282,19 @@ export const useStudio = create<StudioState>()((set, get) => ({
         seq.tracks.push(track)
       }
       id = nid()
-      ;(track.clips as Cue[]).push(cueSchema.parse({ id, at: round3(opts.at ?? s.playhead), duration: opts.duration ?? 2.5, text: opts.text ?? "new line" }))
+      const cues = track.clips as Cue[]
+      // a cue already covering (or starting at) this time pushes the new one
+      // to the end of whatever overlaps — so Enter, Enter, Enter chains cues
+      let at = round3(opts.at ?? s.playhead)
+      for (let i = 0; i < 100; i++) {
+        const hit = cues.filter((c) => c.at <= at + 0.05 && c.at + c.duration > at)
+        if (!hit.length) break
+        at = round3(Math.max(...hit.map((c) => c.at + c.duration)))
+      }
+      placedAt = at
+      cues.push(cueSchema.parse({ id, at, duration: opts.duration ?? 2.5, text: opts.text ?? "new line" }))
     })
-    if (id) set({ selected: [id], primary: id })
+    if (id) set({ selected: [id], primary: id, playhead: placedAt })
     return id
   },
 
@@ -612,4 +623,15 @@ export function sequenceFromRecipe(recipe: Recipe, base: SourceDto, overlay: Sou
   }
   const aspect = recipe.output.aspect === "source" ? "source" : recipe.output.aspect
   return sequenceSchema.parse({ v: 1, canvas: { aspect, sourceOf: aspect === "source" ? base.id : undefined, fps: 30, background: "000000" }, tracks })
+}
+
+/** Text cues on one track never overlap: nudge `cue` to the nearest free edge of whatever it lands on. */
+export function resolveCueOverlap(cues: Cue[], cue: Cue): void {
+  for (let i = 0; i < 20; i++) {
+    const hit = cues.find((c) => c.id !== cue.id && c.at < cue.at + cue.duration && c.at + cue.duration > cue.at && c.at + c.duration > cue.at)
+    if (!hit) return
+    const mine = cue.at + cue.duration / 2
+    const theirs = hit.at + hit.duration / 2
+    cue.at = round3(mine >= theirs ? hit.at + hit.duration : Math.max(0, hit.at - cue.duration))
+  }
 }

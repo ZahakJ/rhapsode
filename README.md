@@ -13,6 +13,8 @@ Paste a YouTube link (or X, TikTok, Instagram, Vimeo — anything yt-dlp reads) 
 - **stack** — the two side by side or one above the other
 - **captions** — bold outlined text, dragged into place, timed if you like
 
+**Studio (advanced mode)** goes further: any number of video, music and text tracks; photos that pan and zoom; clips that dissolve; free-floating boxes with opacity; subtitles with a translation line under each cue (Arabic shaped and right-to-left), SRT in and out; a one-click photo montage. Still one recipe, still one ffmpeg command.
+
 Then render on your own GPU and get a two-word link that unfurls in WhatsApp, Telegram, X and iMessage — or download the mp4, or remix any render into your own.
 
 Landing page: **https://zahakj.github.io/rhapsode/**
