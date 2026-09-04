@@ -6,7 +6,7 @@ import type { JobCtx } from "../jobs.ts"
 import type { Encoder } from "../render/graph.ts"
 import type { Store } from "../store.ts"
 import { ffprobe } from "./probe.ts"
-import { makeImageProxy, makeThumb, makeVideoProxy } from "./proxy.ts"
+import { makeAudioProxy, makeImageProxy, makeThumb, makeVideoProxy, makeWaveformThumb } from "./proxy.ts"
 import { ytDownload } from "./url.ts"
 
 // The fetch job: bring the original into sources/<id>/, probe it, derive the
@@ -47,7 +47,7 @@ export function makeFetchRunner(store: Store, config: Config, encoder: () => Enc
 
       ctx.progress(null, "probe")
       const probe = await ffprobe(origPath, ctx.signal)
-      if (probe.media === "video" && probe.duration > config.fetchAbsMaxS) throw new Error("video is too long")
+      if (probe.media !== "image" && probe.duration > config.fetchAbsMaxS) throw new Error("that is too long")
       if (probe.media === "image" && Math.max(probe.width, probe.height) > 8000) throw new Error("image is too large")
       if (probe.media !== row.media) store.updateSource(row.id, { media: probe.media })
 
@@ -60,18 +60,21 @@ export function makeFetchRunner(store: Store, config: Config, encoder: () => Enc
           signal: ctx.signal,
           onProgress: (p) => ctx.progress(base + span * p),
         })
+      } else if (probe.media === "audio") {
+        await makeAudioProxy(origPath, path.join(dir, "proxy.m4a"), probe, { encoder: encoder(), signal: ctx.signal, onProgress: (p) => ctx.progress(base + span * p) })
       } else {
         await makeImageProxy(origPath, path.join(dir, "proxy.jpg"), ctx.signal)
       }
       ctx.progress(0.98, "thumb")
-      await makeThumb(origPath, path.join(dir, "thumb.jpg"), probe, ctx.signal)
+      if (probe.media === "audio") await makeWaveformThumb(origPath, path.join(dir, "thumb.jpg"), ctx.signal)
+      else await makeThumb(origPath, path.join(dir, "thumb.jpg"), probe, ctx.signal)
 
       const sha = row.sha256 ?? (await sha256File(origPath))
       const bytes = dirBytes(dir)
       store.updateSource(row.id, {
         status: "ready",
         media: probe.media,
-        duration: probe.media === "video" ? probe.duration : null,
+        duration: probe.media === "image" ? null : probe.duration,
         width: probe.width,
         height: probe.height,
         fps: probe.media === "video" ? probe.fps : null,

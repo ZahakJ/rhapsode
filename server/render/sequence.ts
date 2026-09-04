@@ -60,6 +60,7 @@ export function buildSequenceArgs(input: SequenceBuildInput): BuildOutput {
     const clips = track.clips.slice().sort((a, b) => a.at - b.at)
     for (const clip of clips) {
       const src = need(clip.source)
+      if (src.media === "audio") throw new Error(`${clip.id}: a sound cannot sit on a visual track`)
       const dur = src.media === "video" ? Math.min(clip.duration, Math.max(0.1, src.duration - clip.in)) : clip.duration
       const idx = inputs++
       if (src.media === "video") args.push("-ss", fmt(clip.in), "-t", fmt(dur), "-i", src.path)

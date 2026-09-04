@@ -154,7 +154,7 @@ export function outputDurationOf(r: RecipeShape): number {
 // ——— DTOs ———
 
 export type SourceKind = "url" | "upload"
-export type SourceMedia = "video" | "image"
+export type SourceMedia = "video" | "image" | "audio"
 export type SourceStatus = "pending" | "ready" | "failed"
 
 export type SourceDto = {

@@ -88,7 +88,7 @@ export class Store {
     return this.sourceFile(row.id, `orig.${row.ext}`)
   }
   proxyName(row: SourceRow): string {
-    return row.media === "image" ? "proxy.jpg" : "proxy.mp4"
+    return row.media === "image" ? "proxy.jpg" : row.media === "audio" ? "proxy.m4a" : "proxy.mp4"
   }
 
   insertSource(s: {

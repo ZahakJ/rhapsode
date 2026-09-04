@@ -5,7 +5,7 @@
 export type Sniffed = {
   mime: string
   ext: string
-  kind: "image" | "video"
+  kind: "image" | "video" | "audio"
 }
 
 export function sniff(buf: Uint8Array): Sniffed | null {
@@ -22,11 +22,18 @@ export function sniff(buf: Uint8Array): Sniffed | null {
   if (ascii(buf, 0, 4) === "RIFF" && ascii(buf, 8, 12) === "WEBP") {
     return { mime: "image/webp", ext: "webp", kind: "image" }
   }
+  if (ascii(buf, 0, 3) === "ID3" || (buf[0] === 0xff && (buf[1]! & 0xe6) === 0xe2 && (buf[2]! & 0xf0) !== 0xf0)) {
+    return { mime: "audio/mpeg", ext: "mp3", kind: "audio" }
+  }
+  if (ascii(buf, 0, 4) === "OggS") return { mime: "audio/ogg", ext: "ogg", kind: "audio" }
+  if (ascii(buf, 0, 4) === "fLaC") return { mime: "audio/flac", ext: "flac", kind: "audio" }
+  if (ascii(buf, 0, 4) === "RIFF" && ascii(buf, 8, 12) === "WAVE") return { mime: "audio/wav", ext: "wav", kind: "audio" }
   if (ascii(buf, 4, 8) === "ftyp") {
     // ISO-BMFF is a container family: AVIF/HEIC/MOV/3GP share the ftyp box.
     // Only the whitelisted major brands are mp4; everything else is rejected
     // rather than stored under a lying .mp4 extension.
     const brand = ascii(buf, 8, 12)
+    if (brand === "M4A " || brand === "M4B ") return { mime: "audio/mp4", ext: "m4a", kind: "audio" }
     if (MP4_BRANDS.has(brand)) return { mime: "video/mp4", ext: "mp4", kind: "video" }
     // inputs here are transcoded, never hotlinked, so QuickTime (iPhone .mov)
     // and 3GP are welcome; HEIC/AVIF stay out (no libheif in this ffmpeg)
@@ -65,6 +72,11 @@ export const MIME_BY_EXT: Record<string, string> = {
   mp4: "video/mp4",
   webm: "video/webm",
   mov: "video/quicktime",
+  mp3: "audio/mpeg",
+  m4a: "audio/mp4",
+  ogg: "audio/ogg",
+  flac: "audio/flac",
+  wav: "audio/wav",
   "3gp": "video/3gpp",
 }
 

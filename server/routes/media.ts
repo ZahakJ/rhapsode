@@ -12,6 +12,7 @@ import { renderSharePage } from "../share.ts"
 
 const SOURCE_FILES: Record<string, string> = {
   "proxy.mp4": "video/mp4",
+  "proxy.m4a": "audio/mp4",
   "proxy.jpg": "image/jpeg",
   "thumb.jpg": "image/jpeg",
 }
