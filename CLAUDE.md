@@ -31,8 +31,18 @@ ffmpeg/ffprobe must be on PATH. yt-dlp is only exercised by hand.
 - `shared/recipe.ts` — zod **Recipe** (base video cut | image + duration,
   overlay cut + `at`, mode dub|pip|stack, audio keep/duck/mute + gains,
   captions, output aspect/fit) and every DTO. Caps: 180 s output, 6 captions.
-- `server/render/graph.ts` — `buildArgs(recipe, sources)`: the **one render
-  path**, a pure recipe→ffmpeg-argv function pinned by `graph.test.ts`.
+- `shared/sequence.ts` — the **studio** model (advanced mode): tracks of
+  kind visual | audio | text; visual clips (video or still) with fit
+  contain/cover/free+box, opacity, alpha fades, Ken Burns windows, crop/
+  rotate/flip, own-sound volume; audio clips with in/out/gain/fades; text
+  cues with a `sub` line (translations), styles outline/clean/box, SRT
+  parse/format. Caps 600 s / 80 clips / 400 cues / 12 tracks.
+- `server/render/sequence.ts` — `buildSequenceArgs`: one ffmpeg command for
+  a whole sequence (per-clip inputs, yuva overlays bottom→top over a
+  `color` background, zoompan for stills, amix of every lane, drawtext per
+  cue). Same rules as graph.ts; pinned by `sequence.test.ts`.
+- `server/render/graph.ts` — `buildArgs(recipe, sources)`: the simple-mode
+  render path, a pure recipe→ffmpeg-argv function pinned by `graph.test.ts`.
   `run.ts` spawns it with `-progress pipe:1`, makes the poster, ffprobes,
   renames into `data/renders/`. `encoder.ts` probes NVENC once at boot.
 - `server/sources/` — `url.ts` (yt-dlp metadata + ≤1080p download, windowed
@@ -57,6 +67,14 @@ ffmpeg/ffprobe must be on PATH. yt-dlp is only exercised by hand.
   the file lacks is replaced by an `anullsrc` input (a `[1:a]` on a silent
   file is a hard ffmpeg error). `setpts=PTS-STARTPTS` follows every trim;
   `fps=` precedes the `setpts=PTS+AT/TB` shift.
+- **Fonts are script-aware**: `fontFor()` swaps any line containing Arabic
+  to `IBMPlexSansArabic-Bold.ttf` (this ffmpeg has fribidi + harfbuzz, so
+  it shapes correctly). Faces: Anton (outline), Plex Sans Bold `.woff`
+  (clean/box — freetype loads woff, not woff2), Plex Sans Arabic. CJK is
+  not vendored yet.
+- `renders.recipe_json` holds `{recipe}` or `{sequence}` (bare v1 recipes
+  from the first day are read too — `parseStored`). `POST /api/renders`
+  takes either body; sequence 422s are path-prefixed.
 - **drawtext option order is load-bearing on ffmpeg 9**: `textfile=` before
   `fontfile=`, `expansion=none` last. A test pins it — don't tidy it.
   Caption text goes through a file, never inline. `DATA_DIR` and the font
