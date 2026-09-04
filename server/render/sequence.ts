@@ -46,7 +46,7 @@ export function buildSequenceArgs(input: SequenceBuildInput): BuildOutput {
   const captionFiles: BuildOutput["captionFiles"] = []
   let inputs = 0
   const audioLanes: string[] = []
-  const visualLabels: Array<{ label: string; x: number; y: number; at: number; end: number }> = []
+  const visualLabels: Array<{ label: string; x: string; y: string; at: number; end: number }> = []
 
   const need = (id: string): SourceInfo => {
     const s = sources[id]
@@ -74,13 +74,17 @@ export function buildSequenceArgs(input: SequenceBuildInput): BuildOutput {
       if (src.media === "image" && clip.kenBurns) parts.push(kenBurns(clip, dims, W, dur, fps))
       const { chain, x, y } = placement(clip, dims, W, H)
       parts.push(chain)
+      const look = lookChain(clip)
+      if (look) parts.push(look)
       parts.push("format=yuva420p")
+      const motion = transformChain(clip, dims, W, H)
+      if (motion) parts.push(motion.chain)
       if (clip.opacity < 1) parts.push(`colorchannelmixer=aa=${fmt(clip.opacity)}`)
       if (clip.fadeIn > 0) parts.push(`fade=t=in:st=0:d=${fmt(Math.min(clip.fadeIn, dur))}:alpha=1`)
       if (clip.fadeOut > 0) parts.push(`fade=t=out:st=${fmt(Math.max(0, dur - clip.fadeOut))}:d=${fmt(Math.min(clip.fadeOut, dur))}:alpha=1`)
       parts.push(`fps=${fps}`, `setpts=PTS+${fmt(clip.at)}/TB`)
       chains.push(`${parts.join(",")}[${label}]`)
-      visualLabels.push({ label, x, y, at: clip.at, end: clip.at + dur })
+      visualLabels.push({ label, x: motion ? motion.x(x) : String(x), y: motion ? motion.y(y) : String(y), at: clip.at, end: clip.at + dur })
 
       if (src.media === "video" && src.hasAudio && clip.volume > 0) {
         audioLanes.push(audioLane(idx, clip.volume, 0, 0, clip.at, dur))
@@ -196,6 +200,50 @@ function placement(clip: VisualClip, dims: { width: number; height: number }, W:
       `format=yuva420p,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black@0,setsar=1`,
     x: 0,
     y: 0,
+  }
+}
+
+/** eq/gblur/vignette/desaturate — only what differs from neutral. */
+function lookChain(clip: VisualClip): string {
+  const l = clip.look
+  if (!l) return ""
+  const parts: string[] = []
+  const eq: string[] = []
+  if (l.brightness !== 0) eq.push(`brightness=${fmt(l.brightness)}`)
+  if (l.contrast !== 1) eq.push(`contrast=${fmt(l.contrast)}`)
+  const sat = l.grayscale ? 0 : l.saturation
+  if (sat !== 1) eq.push(`saturation=${fmt(sat)}`)
+  if (l.gamma !== 1) eq.push(`gamma=${fmt(l.gamma)}`)
+  if (eq.length) parts.push(`eq=${eq.join(":")}`)
+  if (l.blur > 0) parts.push(`gblur=sigma=${fmt(l.blur)}`)
+  if (l.vignette > 0) parts.push(`vignette=angle=${fmt((Math.PI / 5) * l.vignette)}`)
+  return parts.join(",")
+}
+
+/**
+ * Scale about the centre, rotate with a transparent fill, and shift. The
+ * overlay position is an expression so the rotated frame stays centred on
+ * where the unrotated one sat: (placed - rotated)/2 + offset.
+ */
+function transformChain(clip: VisualClip, dims: { width: number; height: number }, W: number, H: number): { chain: string; x: (base: number) => string; y: (base: number) => string } | null {
+  const t = clip.transform
+  if (!t) return null
+  if (t.x === 0 && t.y === 0 && t.scale === 1 && t.rotate === 0) return null
+  const parts: string[] = []
+  if (t.scale !== 1) parts.push(`scale=trunc(iw*${fmt(t.scale)}/2)*2:trunc(ih*${fmt(t.scale)}/2)*2:flags=bicubic`)
+  const rot = ((t.rotate % 360) + 360) % 360
+  if (rot !== 0) parts.push(`rotate=${fmt((rot * Math.PI) / 180)}:c=black@0:ow=rotw(${fmt((rot * Math.PI) / 180)}):oh=roth(${fmt((rot * Math.PI) / 180)})`)
+  const dx = Math.round(W * t.x)
+  const dy = Math.round(H * t.y)
+  const grows = t.scale !== 1 || rot !== 0
+  // `w`/`h` inside overlay's x/y are the overlay's own dimensions after this chain
+  const free = clip.fit === "free" && clip.box
+  const placedW = free ? even(W * clip.box!.w) : W
+  const placedH = free ? Math.round((placedW * dims.height) / dims.width) : H
+  return {
+    chain: parts.join(","),
+    x: (base) => (grows ? `${base}+(${placedW}-w)/2+${dx}` : `${base + dx}`),
+    y: (base) => (grows ? `${base}+(${placedH}-h)/2+${dy}` : `${base + dy}`),
   }
 }
 
