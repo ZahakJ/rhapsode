@@ -79,3 +79,27 @@ export function Section({ title, children, right }: { title: string; children: R
 }
 
 export const hasArabic = (s: string): boolean => /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/.test(s)
+
+/** A typed number with a unit and a reset. */
+export function NumInput({ label, value, onCommit, min, max, step = 1, unit, neutral, digits = 0 }: { label: string; value: number; onCommit: (v: number) => void; min: number; max: number; step?: number; unit?: string; neutral?: number; digits?: number }) {
+  const [text, setText] = useState(value.toFixed(digits))
+  const [editing, setEditing] = useState(false)
+  useEffect(() => {
+    if (!editing) setText(value.toFixed(digits))
+  }, [value, editing, digits])
+  const commit = () => {
+    setEditing(false)
+    const n = Number(text)
+    if (!Number.isFinite(n)) return setText(value.toFixed(digits))
+    onCommit(Math.min(max, Math.max(min, n)))
+  }
+  return (
+    <label className="st-field st-numinput">
+      <span className="st-field__label">{label}{neutral !== undefined && Math.abs(value - neutral) > 1e-6 && <button type="button" className="st-numinput__reset" onClick={(e) => { e.preventDefault(); onCommit(neutral) }} title="reset">↺</button>}</span>
+      <span className="st-numinput__row">
+        <input className="st-field__input mono" inputMode="decimal" value={text} onFocus={() => setEditing(true)} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur(); if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); const n = Number(text) || 0; const d = (e.key === "ArrowUp" ? 1 : -1) * step * (e.shiftKey ? 10 : 1); onCommit(Math.min(max, Math.max(min, n + d))); } }} />
+        {unit && <span className="st-numinput__unit">{unit}</span>}
+      </span>
+    </label>
+  )
+}

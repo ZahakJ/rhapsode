@@ -620,7 +620,27 @@ export function contentEnd(seq: Sequence): number {
 
 // ——— validation ———
 
-export function validateSequence(seq: Sequence, sources: Record<string, SourceDto>): { ok: true; sequence: SequenceInput } | { ok: false; error: string; clipId?: string } {
+export const NEUTRAL_LOOK = { brightness: 0, contrast: 1, saturation: 1, gamma: 1, blur: 0, vignette: 0, grayscale: false }
+export function isNeutralLook(l: Partial<typeof NEUTRAL_LOOK> | undefined | null): boolean {
+  if (!l) return true
+  return (Object.keys(NEUTRAL_LOOK) as Array<keyof typeof NEUTRAL_LOOK>).every((k) => (l[k] ?? NEUTRAL_LOOK[k]) === NEUTRAL_LOOK[k])
+}
+
+/** transform/look go over the wire only when they do something */
+export function stripNeutral(seq: Sequence): Sequence {
+  const out = JSON.parse(JSON.stringify(seq)) as Sequence
+  for (const t of out.tracks)
+    if (t.kind === "visual")
+      for (const c of t.clips) {
+        const tr = c.transform
+        if (!tr || (Math.abs(tr.x) < 1e-6 && Math.abs(tr.y) < 1e-6 && Math.abs(tr.scale - 1) < 1e-6 && Math.abs(tr.rotate) < 1e-6)) delete c.transform
+        if (isNeutralLook(c.look)) delete c.look
+      }
+  return out
+}
+
+export function validateSequence(seqIn: Sequence, sources: Record<string, SourceDto>): { ok: true; sequence: SequenceInput } | { ok: false; error: string; clipId?: string } {
+  const seq = stripNeutral(seqIn)
   const parsed = sequenceSchema.safeParse(seq)
   if (!parsed.success) {
     const issue = parsed.error.issues[0]

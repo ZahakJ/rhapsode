@@ -1700,3 +1700,109 @@
 .st-ruler {
   flex: 1 0 auto;
 }
+
+/* ————— gizmo + look ————— */
+.st-gizmo {
+  position: absolute;
+  border: 1px solid var(--accent);
+  box-sizing: border-box;
+  cursor: move;
+  touch-action: none;
+  z-index: 8;
+  transform-origin: center;
+}
+.st-gizmo__h {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  background: var(--accent);
+  border: 1px solid #000;
+  border-radius: 2px;
+  touch-action: none;
+}
+.st-gizmo__h--n, .st-gizmo__h--s { cursor: ns-resize; }
+.st-gizmo__h--e, .st-gizmo__h--w { cursor: ew-resize; }
+.st-gizmo__h--nw, .st-gizmo__h--se { cursor: nwse-resize; }
+.st-gizmo__h--ne, .st-gizmo__h--sw { cursor: nesw-resize; }
+.st-gizmo__stem {
+  position: absolute;
+  left: 50%;
+  top: -22px;
+  height: 22px;
+  border-left: 1px solid var(--accent);
+}
+.st-gizmo__rot {
+  position: absolute;
+  left: 50%;
+  top: -30px;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  border-radius: 50%;
+  background: var(--ice, #7dd3fc);
+  border: 2px solid #000;
+  cursor: grab;
+  touch-action: none;
+}
+.st-gizmo__readout {
+  position: absolute;
+  left: 50%;
+  bottom: -26px;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: var(--ice, #7dd3fc);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.st-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.85) 100%);
+}
+.st-look {
+  display: grid;
+  gap: 8px;
+}
+.st-presets--tight {
+  gap: 2px;
+}
+.st-tl__hb--wide {
+  width: auto;
+  padding: 0 6px;
+}
+.st-toggle--look {
+  font-size: 12px;
+}
+.st-numinput__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.st-numinput__unit {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.st-numinput__reset {
+  margin-left: 6px;
+  background: none;
+  border: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0;
+}
+.st-play {
+  cursor: pointer;
+  position: relative;
+  z-index: 2;
+}
+.rh-stage__play,
+.rh-trim__play {
+  cursor: pointer;
+  z-index: 3;
+}

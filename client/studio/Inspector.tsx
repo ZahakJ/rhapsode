@@ -4,7 +4,9 @@ import type { AudioClip, Cue, VisualClip } from "../../shared/sequence.ts"
 import { CropPanel } from "../compose/CropPanel.tsx"
 import { isRealEdit } from "../store/composeStore.ts"
 import { clamp, fmtTime } from "../util/time.ts"
-import { NumField, Section, Seg, TimeField } from "./fields.tsx"
+import { NumField, NumInput, Section, Seg, TimeField } from "./fields.tsx"
+import { NEUTRAL_T } from "./Gizmo.tsx"
+import { NEUTRAL_LOOK } from "./studioStore.ts"
 import { KB_PRESETS, clipLength, findClip, useStudio } from "./studioStore.ts"
 
 /** Everything about the selected clip (or track), in typed, exact fields. */
@@ -88,6 +90,34 @@ function VisualInspector({ clip, srcName, layer }: { clip: VisualClip; srcName?:
           <NumField label="fade out" value={clip.fadeOut} min={0} max={5} step={0.1} onCommit={(fadeOut) => set({ fadeOut })} suffix=" s" />
         </div>
         {isVideo && <NumField label="clip sound" value={clip.volume} min={0} max={2} step={0.05} onCommit={(volume) => set({ volume })} fmt={(v) => (v === 0 ? "muted" : `${Math.round(v * 100)}%`)} />}
+      </Section>
+      <Section title="motion" right={clip.transform ? <button className="st-tl__hb" onClick={() => set({ transform: undefined })} title="reset motion">↺</button> : undefined}>
+        <div className="st-grid2">
+          <NumInput label="x" value={(clip.transform ?? NEUTRAL_T).x * 100} min={-200} max={200} step={1} unit="%" neutral={0} onCommit={(v) => set({ transform: { ...(clip.transform ?? NEUTRAL_T), x: v / 100 } })} />
+          <NumInput label="y" value={(clip.transform ?? NEUTRAL_T).y * 100} min={-200} max={200} step={1} unit="%" neutral={0} onCommit={(v) => set({ transform: { ...(clip.transform ?? NEUTRAL_T), y: v / 100 } })} />
+          <NumInput label="scale" value={(clip.transform ?? NEUTRAL_T).scale * 100} min={5} max={800} step={1} unit="%" neutral={100} onCommit={(v) => set({ transform: { ...(clip.transform ?? NEUTRAL_T), scale: v / 100 } })} />
+          <NumInput label="rotation" value={(clip.transform ?? NEUTRAL_T).rotate} min={-360} max={360} step={1} unit="°" neutral={0} digits={1} onCommit={(v) => set({ transform: { ...(clip.transform ?? NEUTRAL_T), rotate: v } })} />
+        </div>
+        <p className="rh-hint">drag the box on the monitor · handles scale · the knob rotates · double-click resets</p>
+      </Section>
+      <Section title="look" right={<span className="st-presets st-presets--tight">
+        {([["none", NEUTRAL_LOOK], ["punchy", { ...NEUTRAL_LOOK, contrast: 1.18, saturation: 1.25, vignette: 0.25 }], ["faded", { ...NEUTRAL_LOOK, contrast: 0.85, saturation: 0.7, brightness: 0.08, gamma: 1.15 }], ["mono", { ...NEUTRAL_LOOK, grayscale: true, contrast: 1.12, vignette: 0.3 }]] as const).map(([n, l]) => (
+          <button key={n} className="st-tl__hb st-tl__hb--wide" onClick={() => set({ look: n === "none" ? undefined : { ...l } })}>{n}</button>
+        ))}
+      </span>}>
+        <div className="st-look">
+          <NumField label="brightness" value={(clip.look ?? NEUTRAL_LOOK).brightness} min={-1} max={1} step={0.01} onCommit={(brightness) => set({ look: { ...(clip.look ?? NEUTRAL_LOOK), brightness } })} fmt={(v) => `${v >= 0 ? "+" : ""}${Math.round(v * 100)}`} />
+          <NumField label="contrast" value={(clip.look ?? NEUTRAL_LOOK).contrast} min={0} max={3} step={0.01} onCommit={(contrast) => set({ look: { ...(clip.look ?? NEUTRAL_LOOK), contrast } })} fmt={(v) => `${Math.round(v * 100)}%`} />
+          <NumField label="saturation" value={(clip.look ?? NEUTRAL_LOOK).saturation} min={0} max={3} step={0.01} onCommit={(saturation) => set({ look: { ...(clip.look ?? NEUTRAL_LOOK), saturation } })} fmt={(v) => `${Math.round(v * 100)}%`} />
+          <NumField label="gamma" value={(clip.look ?? NEUTRAL_LOOK).gamma} min={0.1} max={4} step={0.01} onCommit={(gamma) => set({ look: { ...(clip.look ?? NEUTRAL_LOOK), gamma } })} fmt={(v) => v.toFixed(2)} />
+          <NumField label="blur" value={(clip.look ?? NEUTRAL_LOOK).blur} min={0} max={50} step={0.5} onCommit={(blur) => set({ look: { ...(clip.look ?? NEUTRAL_LOOK), blur } })} fmt={(v) => `${v}px`} />
+          <NumField label="vignette" value={(clip.look ?? NEUTRAL_LOOK).vignette} min={0} max={1} step={0.01} onCommit={(vignette) => set({ look: { ...(clip.look ?? NEUTRAL_LOOK), vignette } })} fmt={(v) => `${Math.round(v * 100)}%`} />
+          <label className="st-toggle st-toggle--look">
+            <input type="checkbox" checked={(clip.look ?? NEUTRAL_LOOK).grayscale} onChange={(e) => set({ look: { ...(clip.look ?? NEUTRAL_LOOK), grayscale: e.target.checked } })} /> black & white
+          </label>
+          {clip.look && <button className="ms-btn ms-btn--small ms-btn--ghost" onClick={() => set({ look: undefined })}>reset look</button>}
+        </div>
+        <p className="rh-hint">preview approximates the look; gamma shows only in the render</p>
       </Section>
       {!isVideo && src && (
         <Section title="pan & zoom" right={<span className="rh-hint">{kbName}</span>}>

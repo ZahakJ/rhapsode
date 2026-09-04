@@ -382,7 +382,9 @@ export function Stage() {
         ))}
         {base && (
           <button
+            type="button"
             className={`rh-stage__play${playing ? " rh-stage__play--on" : ""}`}
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation()
               toggle()

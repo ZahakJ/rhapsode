@@ -233,12 +233,49 @@ try {
   await page.locator(".st-menubar__btn", { hasText: "Window" }).dispatchEvent("pointerdown")
   await page.locator(".st-menu__item", { hasText: "Layout: Editing" }).click()
   console.log("  ✓ studio menus, shortcuts, layouts, float/dock")
+
+  // the gizmo: select a clip, drag it, rotate it, dial a look, then the render must carry both
+  await page.locator(".st-clip--visual").first().click()
+  await page.waitForSelector(".st-gizmo", { timeout: 5000 })
+  const gz = await page.locator(".st-gizmo").boundingBox()
+  await page.mouse.move(gz.x + gz.width / 2, gz.y + gz.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(gz.x + gz.width / 2 + 60, gz.y + gz.height / 2 + 30, { steps: 8 })
+  await page.mouse.up()
+  const rot = await page.locator(".st-gizmo__rot").boundingBox()
+  const gz2 = await page.locator(".st-gizmo").boundingBox()
+  const cx = gz2.x + gz2.width / 2
+  const cy = gz2.y + gz2.height / 2
+  await page.mouse.move(rot.x + rot.width / 2, rot.y + rot.height / 2)
+  await page.mouse.down()
+  // sweep a quarter turn around the centre
+  for (let a = -90; a <= 0; a += 15) {
+    const rad = (a * Math.PI) / 180
+    await page.mouse.move(cx + Math.cos(rad) * 160, cy + Math.sin(rad) * 160)
+  }
+  await page.mouse.up()
+  const contrast = page.locator(".st-look input[type=range]").nth(1)
+  await contrast.evaluate((el) => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set
+    setter.call(el, "1.4")
+    el.dispatchEvent(new Event("input", { bubbles: true }))
+  })
+  await page.waitForTimeout(400)
+  await page.screenshot({ path: shot("studio-gizmo") })
+  const motionText = await page.locator(".st-numinput input").nth(3).inputValue()
+  if (!(Math.abs(Number(motionText)) > 30)) throw new Error(`rotation did not take: ${motionText}`)
+  console.log("  ✓ gizmo moved + rotated, look dialled")
   await page.locator(".st-render").click()
   await page.waitForURL(/#\/r\//, { timeout: 120000 })
   await page.waitForSelector("video", { timeout: 10000 })
   await page.waitForTimeout(500)
   await page.screenshot({ path: shot("studio-result") })
-  console.log(`  ✓ studio → ${decodeURIComponent(page.url().split("#/r/")[1])}`)
+  const studioSlug = decodeURIComponent(page.url().split("#/r/")[1])
+  const bundle = await (await fetch(`${ORIGIN}/api/renders/${studioSlug}/recipe`, { headers: H })).json()
+  const vclips = bundle.sequence.tracks.filter((t) => t.kind === "visual").flatMap((t) => t.clips)
+  if (!vclips.some((c) => c.transform && Math.abs(c.transform.rotate) > 30)) throw new Error("the render's sequence lost the transform")
+  if (!vclips.some((c) => c.look && Math.abs(c.look.contrast - 1.4) < 0.01)) throw new Error("the render's sequence lost the look")
+  console.log(`  ✓ studio → ${studioSlug} (transform + look carried)`)
   await page.close()
 
   // ————— phone —————
