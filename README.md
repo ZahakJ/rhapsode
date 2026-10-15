@@ -1,69 +1,64 @@
-<p align="center">
-  <img src="docs/assets/og.png" alt="Rhapsode" width="720">
-</p>
+<p align="center"><img src="docs/media/banner.png" width="820" alt="Rhapsode: the studio with a media bin, program monitor, multitrack timeline and inspector"></p>
 
-# Rhapsode
-
-**ῥαψῳδός — the song-stitcher.** Take a piece of one thing and lay it on another.
-
-A self-hosted cutting room. Paste a YouTube link (or X, TikTok, Instagram, Vimeo — anything yt-dlp reads) or drop a clip from your phone, cut the seconds you want, stitch them onto a photo, a clip, or another link, and render on your own GPU. Every render gets a two-word link that unfurls in WhatsApp, Telegram, X and iMessage.
-
-Landing page: **https://zahakj.github.io/rhapsode/**
-
-## Cut
-
-The quick path: a base, a clip on top, and how they meet — **dub** (keep, duck, or mute the base's own sound), **picture-in-picture**, or **stack** — plus outlined captions. Frame-honest trimming with typed in and out points and a keyboard-driven playhead. Works in a minute on a phone.
-
-<p align="center"><img src="docs/assets/compose.png" alt="The cut view" width="900"></p>
-
-## Studio
-
-When two pieces are not enough: any number of video, music and text tracks. Photos that pan and zoom, clips that dissolve into each other, floating boxes with opacity, subtitles with a second line for translations and SRT in and out, a one-click photo montage. Premiere-style shortcuts, right-click menus, dockable panels. Still one recipe, still one ffmpeg command.
-
-<p align="center"><img src="docs/assets/studio.png" alt="The studio" width="900"></p>
-
-
-## On the phone
+Rhapsode is a self-hosted video editor: cut a few seconds from a link or an upload, lay them over a photo, a clip or a multitrack sequence, render with ffmpeg, and share the result as a short link.
 
 <p align="center">
-  <img src="docs/assets/phone-pieces.png" alt="pieces" width="220">
-  <img src="docs/assets/phone-cut.png" alt="cut" width="220">
-  <img src="docs/assets/phone-compose.png" alt="compose" width="220">
+  <img src="docs/media/studio.webp" width="400" alt="The studio: stills with pan and zoom, a bilingual subtitle track and a music track on the timeline">
+  <img src="docs/media/compose.webp" width="400" alt="The cut view: two trimmed pieces composed as a picture-in-picture with a caption">
+</p>
+<p align="center">
+  <img src="docs/media/wall.webp" width="400" alt="The wall of finished renders">
+  <img src="docs/media/result.webp" width="400" alt="A finished 9:16 stack render with its share link">
 </p>
 
-## Run it
+<p align="center"><sub>Footage: <i>Big Buck Bunny</i> and <i>Sintel</i>, © Blender Foundation, CC BY.</sub></p>
 
+## Run
+
+Needs Node 24 or newer, `ffmpeg`/`ffprobe` and `yt-dlp` on `PATH`.
+
+```sh
+git clone https://github.com/ZahakJ/rhapsode && cd rhapsode
+npm ci
+cp .env.example .env          # set INVITE_KEY
+npm run build && npm start    # http://127.0.0.1:8013
 ```
-cp .env.example .env        # set INVITE_KEY — viewing is public, creating needs the key
-npm install
-npm run dev:server          # API on :5950
-npm run dev                 # UI on :5951
-```
 
-Needs Node ≥ 24, `ffmpeg` / `ffprobe` and `yt-dlp` on PATH. Renders use `h264_nvenc` when an NVIDIA GPU answers, `libx264` otherwise.
+For development, `npm run dev:server` (API on :5950) and `npm run dev` (UI on :5951).
+Checks: `npm run typecheck && npm test && npm run build && npm run smoke`.
 
-The done bar: `npm run typecheck && npm test && npm run build && npm run smoke`. The tests render real clips through ffmpeg from generated fixtures; the smoke drives the entire UI in headless Chromium on desktop and phone.
+## Use
 
-## Shape
+Viewing renders is open; adding sources and rendering need the key from `.env`,
+entered through the **guest** button in the top bar.
 
-Single package: `client/` (Vite + React), `server/` (Hono, run directly by Node's type-stripping — no server build), `shared/` (the zod recipe and sequence schemas both sides speak). Media and a SQLite file live under `data/`.
+- **Cut** (`#/`): choose a base (video or photo) and a clip to lay on top, from a
+  link, a file, a paste or a drop. Trim each with typed in and out points or the
+  keyboard (space, ← →, `I`, `O`). Pick a mode: **dub** (the clip's sound over the
+  base, with the base kept, ducked or muted), **picture-in-picture**, or **stack**.
+  Add captions, choose a canvas, render.
+- **Studio** (`#/studio`): video, audio and text tracks; stills with pan and zoom,
+  fades, free placement, rotation and colour; subtitles with a second line and SRT
+  import and export. Press `?` for the shortcuts.
+- **Share**: every render gets a two-word address, `/m/<slug>`, that previews as a
+  video in chat apps. **Remix** reopens the recipe behind any render.
 
-**The recipe is the whole edit.** `server/render/graph.ts` (two pieces) and `server/render/sequence.ts` (the studio) turn it into one ffmpeg command — pure functions, unit-tested by asserting the argv down to the filter strings — and those are the only render paths. Sources become one original plus one locally derived scrub proxy, so what you trim in the browser is exactly what ffmpeg cuts.
+## How it works
 
-Things the code is careful about, because each one bit once:
+The browser edits a document: a two-piece recipe or a multitrack sequence, both
+zod schemas shared with the server. Each source is stored once as an original plus
+a browser-friendly proxy derived from it, so times picked in the browser are exact
+in the render. A render job turns the document into a single ffmpeg command through
+a pure function whose output the tests assert, runs it with NVENC or libx264, and
+keeps the document with the result.
 
-- never `-shortest`; output length is an explicit `-t`, every audio lane is padded, every `amix` carries `normalize=0`
-- ducking is a sidechain compressor, not a volume step
-- a lane the mode wants but the file lacks is replaced by generated silence
-- captions go through files; ffmpeg 9's drawtext option order is pinned by a test; fonts are chosen per script so right-to-left text shapes correctly
-- yt-dlp player clients are pinned so sectioned fetches of long videos are not refused
-- uploads stream to disk while being sniffed and hashed; phone clips are never buffered in memory
-- a restart marks in-flight jobs failed; nothing pretends
+## Documentation
 
-## Deploy
-
-`deploy/rhapsode.service` is a systemd user unit (sandboxed, with the device rules NVENC needs). The server binds loopback only; put a Cloudflare tunnel or a reverse proxy in front of it. Set `PUBLIC_ORIGIN` so share links carry your domain. Storage is capped (`DISK_CAP_BYTES`, `RENDER_CAP_BYTES`) and old unreferenced sources are swept.
+- [Architecture](docs/ARCHITECTURE.md): modules, request flow, jobs, HTTP API, security model
+- [Data model](docs/DATA-MODEL.md): recipe and sequence schemas, tables, lifetimes
+- [Rendering](docs/RENDERING.md): the ffmpeg graphs, fonts, encoders, source proxies
+- [Deployment](docs/DEPLOYMENT.md): configuration, systemd, development and tests
 
 ## License
 
-MIT.
+[MIT](LICENSE). The bundled fonts (Anton, IBM Plex) are under the SIL Open Font License.

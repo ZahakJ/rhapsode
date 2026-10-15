@@ -54,7 +54,7 @@ export function ShortcutsOverlay() {
               <div className="st-cheat__row"><span>Pan the timeline / monitor</span><span className="mono st-cheat__keys"><kbd>H</kbd> then drag</span></div>
             </section>
           </div>
-          <p className="rh-hint">bindings are stored in <span className="mono">rhapsode:v1:keys</span> — a remapping screen is the next step; the map is already yours to edit.</p>
+          <p className="rh-hint">bindings live in local storage under <span className="mono">rhapsode:v1:keys</span>.</p>
         </div>
       </div>
     </Portal>
@@ -117,7 +117,7 @@ export function AboutSheet() {
       <div className="st-scrim" onClick={close}>
         <div className="st-sheet st-sheet--tiny" onClick={(e) => e.stopPropagation()}>
           <span className="st-section__title">rhapsode · the cutting room</span>
-          <p className="rh-hint">ῥαψῳδός — the song-stitcher. A sequence of tracks, one pure recipe→ffmpeg path, links that unfurl. Self-hosted, MIT.</p>
+          <p className="rh-hint">ῥαψῳδός, the song-stitcher. Cut pieces of video, lay them on each other, render with ffmpeg. MIT.</p>
           <p className="rh-hint mono">github.com/ZahakJ/rhapsode</p>
           <button className="ms-btn ms-btn--small" onClick={close}>close</button>
         </div>

@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Rhapsode — the cutting room</title>
-<meta name="description" content="Clip a piece of any video and stitch it onto another. A self-hosted cutting room with a multitrack studio, rendered on your own GPU.">
+<meta name="description" content="Cut a piece of any video and lay it over another. A self-hosted video editor with a two-piece cut and a multitrack studio, rendered with ffmpeg.">
 <meta property="og:title" content="Rhapsode — the cutting room">
-<meta property="og:description" content="Clip a piece of any video and stitch it onto a photo, a clip, or another link. Self-hosted, GPU-rendered, one pure render path.">
+<meta property="og:description" content="Cut a piece of any video and lay it over a photo, a clip or another link. Self-hosted, rendered with ffmpeg.">
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://zahakj.github.io/rhapsode/assets/og.png">
 <meta name="theme-color" content="#0b0d12">
@@ -70,12 +70,12 @@
   <div class="hero">
     <span class="eyebrow">ῥαψῳδός · the song-stitcher</span>
     <h1>Take a piece of one thing.<br>Lay it on <span>another.</span></h1>
-    <p class="lead">A self-hosted cutting room. Paste a link or drop a clip, cut the seconds you want, stitch them onto something else, and render on your own GPU.</p>
+    <p class="lead">A self-hosted video editor. Paste a link or drop a clip, cut the seconds you want, lay them over something else, and render with ffmpeg.</p>
     <div class="cta">
       <a class="btn p" href="https://github.com/ZahakJ/rhapsode">Get the source</a>
       <a class="btn" href="#run">Run it locally</a>
     </div>
-    <div class="frame"><img src="assets/studio.png" alt="The studio: media bin, program monitor, multitrack timeline, inspector" width="1600" height="1000"></div>
+    <div class="frame"><img src="media/studio.webp" alt="The studio: media bin, program monitor, multitrack timeline, inspector" width="1600" height="1000"></div>
   </div>
 
   <section id="cut">
@@ -83,22 +83,22 @@
       <div>
         <span class="eyebrow">cut</span>
         <h2>Two pieces, one decision</h2>
-        <p class="sub">The quick path. A base and a clip on top, and how they meet: a dub, a picture-in-picture, or a stack. Captions if you want them. Done in a minute, on a phone.</p>
+        <p class="sub">A base, a clip on top, and how they meet: a dub, a picture-in-picture or a stack, with optional captions.</p>
         <ul class="list">
-          <li><b>Any link yt-dlp reads</b>, or your camera roll. Long videos fetch a window around the moment you point at.</li>
-          <li><b>Frame-honest trimming.</b> Typed in and out points, a playhead on the keyboard, a proxy cut from the same file the render reads.</li>
-          <li><b>Links that unfurl.</b> Two-word addresses with video previews for WhatsApp, Telegram, X and iMessage. Plain mp4 too.</li>
+          <li><b>Any link yt-dlp reads</b>, or an upload. Long videos are fetched as a window around the moment you point at.</li>
+          <li><b>Frame-accurate trimming.</b> Typed in and out points, a keyboard playhead, and a proxy derived from the same file the render reads.</li>
+          <li><b>Share links.</b> Two-word addresses with OpenGraph video tags, and the plain mp4.</li>
         </ul>
       </div>
-      <div class="frame" style="margin:0"><img src="assets/compose.png" alt="The cut view: trimmers, stage with a picture-in-picture, timeline, inspector" width="1600" height="1000"></div>
+      <div class="frame" style="margin:0"><img src="media/compose.webp" alt="The cut view: trimmers, stage with a picture-in-picture, timeline, inspector" width="1600" height="1000"></div>
     </div>
   </section>
 
   <section id="studio">
     <span class="eyebrow">studio</span>
-    <h2>A multitrack cutting room when two pieces are not enough</h2>
-    <p class="sub">Any number of video, music and text tracks. Photos that pan and zoom, clips that dissolve, floating boxes, subtitles with a second line for translations. Still one ffmpeg command at the end.</p>
-    <div class="frame"><img src="assets/studio-frame.png" alt="A frame from a rendered sequence: a still with a slow zoom and a caption" width="1600" height="900"></div>
+    <h2>Multitrack editing</h2>
+    <p class="sub">Up to twelve video, audio and text tracks. Pan and zoom on stills, cross-dissolves, free placement with rotation, colour adjustments, two-line subtitles with SRT import and export. One ffmpeg command renders the whole sequence.</p>
+    <div class="frame"><img src="assets/studio-frame.webp" alt="A frame from a rendered sequence: a still with a slow zoom and a caption" width="1600" height="900"></div>
     <div class="keys"><kbd>space</kbd><kbd>J K L</kbd><kbd>I O</kbd><kbd>S</kbd><kbd>Q W</kbd><kbd>⌘Z</kbd><kbd>⌘D</kbd><kbd>N</kbd><kbd>?</kbd></div>
   </section>
 
@@ -112,7 +112,7 @@
       <div>
         <span class="eyebrow">on the phone</span>
         <h2>Pieces, cut, compose</h2>
-        <p class="sub">Three steps sized for a thumb. Paste a link or a photo, drag the handles, render. The job finishes even if you switch apps.</p>
+        <p class="sub">On a phone the cut view becomes three steps: pick, trim, compose. A render keeps going while the tab is in the background.</p>
       </div>
     </div>
   </section>
@@ -122,7 +122,7 @@
       <div>
         <span class="eyebrow">how it works</span>
         <h2>The recipe is the whole edit</h2>
-        <p class="sub">The browser edits a recipe. The server validates it, turns it into a single ffmpeg command through one pure function, renders it with NVENC, and keeps the recipe with the result so it can be remixed.</p>
+        <p class="sub">The browser edits a recipe. The server validates it, turns it into a single ffmpeg command through one pure function, renders it with NVENC or libx264, and stores the recipe with the result so it can be remixed.</p>
       </div>
       <pre><span class="c">// a two-piece recipe</span>
 {
@@ -147,9 +147,9 @@
     <div class="split">
       <div>
         <span class="eyebrow">run it</span>
-        <h2>One package, your machine</h2>
+        <h2>One package</h2>
         <p class="sub">Vite + React client, a Hono server Node runs directly, a shared schema. Media and a SQLite file under <code>data/</code>. Viewing is public, creating needs the key.</p>
-        <p class="fine">Needs Node ≥ 24, ffmpeg and yt-dlp on the PATH. An NVIDIA GPU is used when present. Renders are capped at 3 minutes, sequences at 10. MIT.</p>
+        <p class="fine">Needs Node 24 or newer, ffmpeg and yt-dlp on the PATH. An NVIDIA GPU is used when present. Renders are capped at 3 minutes, sequences at 10. MIT.</p>
       </div>
       <pre>git clone https://github.com/ZahakJ/rhapsode
 cd rhapsode && cp .env.example .env   <span class="c"># set INVITE_KEY</span>
@@ -161,7 +161,7 @@ npm run dev                           <span class="c"># :5951</span></pre>
 </main>
 
 <footer class="wrap">
-  RHAPSODE · MIT · <a href="https://github.com/ZahakJ/rhapsode">github.com/ZahakJ/rhapsode</a>
+  RHAPSODE · MIT · <a href="https://github.com/ZahakJ/rhapsode">github.com/ZahakJ/rhapsode</a> · <a href="https://github.com/ZahakJ/rhapsode/blob/main/docs/ARCHITECTURE.md">architecture</a>
 </footer>
 </body>
 </html>

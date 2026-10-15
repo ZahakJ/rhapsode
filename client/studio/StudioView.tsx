@@ -272,7 +272,7 @@ export function StudioView({ slug }: { slug?: string }) {
           ))}
         </div>
         <div className="st-phonepanel">{phoneTab === "bin" ? <MediaBin /> : phoneTab === "subtitles" ? <SubtitlesPanel /> : phoneTab === "markers" ? <MarkersPanel /> : <Inspector />}</div>
-        <p className="rh-hint st-phonehint">the studio is happiest on a desktop — fine edits are easier with a mouse and a keyboard</p>
+        <p className="rh-hint st-phonehint">fine edits are easier with a mouse and keyboard</p>
         {missing && contentEnd(s.seq) > 0 && <p className="rh-hint rh-missing">{missing}</p>}
         {hiddenInputs}
         {prompts}
