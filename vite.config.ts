@@ -13,10 +13,12 @@ export default defineConfig({
   server: {
     port: 5951,
     strictPort: true,
+    // anchored, and never for a source module: a bare "/m" prefix would
+    // swallow /main.tsx and "/api" the client's own api/*.ts
     proxy: {
-      "/api": API,
-      "/m": API,
-      "/s": API,
+      "^/api(/|$)": { target: API, bypass: (req) => (/\.tsx?(\?|$)/.test(req.url ?? "") ? req.url : undefined) },
+      "^/m(/|$)": API,
+      "^/s(/|$)": API,
       "/healthz": API,
     },
   },

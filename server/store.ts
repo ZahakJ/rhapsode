@@ -2,7 +2,7 @@ import crypto from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
 import type { DatabaseSync } from "node:sqlite"
-import type { JobDto, JobKind, JobStatus, RenderDto, SourceDto, SourceKind, SourceMedia, SourceStatus } from "../shared/recipe.ts"
+import type { JobDto, JobKind, JobStatus, RenderDto, SourceDto, SourceKind, SourceMedia, SourceStatus, StemKind } from "../shared/recipe.ts"
 import { uniqueSlug } from "./slugs.ts"
 
 export type SourceRow = {
@@ -26,6 +26,9 @@ export type SourceRow = {
   job_id: string | null
   created_at: number
   last_used_at: number
+  /** stems: the source this was split from, and which half */
+  parent_id: string | null
+  stem: StemKind | null
 }
 
 export type RenderRow = {
@@ -104,18 +107,26 @@ export class Store {
     sha256?: string | null
     bytes?: number
     jobId?: string | null
+    parentId?: string | null
+    stem?: StemKind | null
   }): SourceRow {
     const now = Date.now()
     this.db
       .prepare(
-        `INSERT INTO sources (id, kind, media, status, url, title, ext, duration, window_start, window_end, sha256, bytes, job_id, created_at, last_used_at)
-         VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO sources (id, kind, media, status, url, title, ext, duration, window_start, window_end, sha256, bytes, job_id, created_at, last_used_at, parent_id, stem)
+         VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         s.id, s.kind, s.media, s.url ?? null, s.title ?? "", s.ext ?? "", s.duration ?? null,
         s.windowStart ?? null, s.windowEnd ?? null, s.sha256 ?? null, s.bytes ?? 0, s.jobId ?? null, now, now,
+        s.parentId ?? null, s.stem ?? null,
       )
     return this.sourceById(s.id)!
+  }
+
+  /** every stem split from a parent, newest first (pending ones included — the route decides what counts) */
+  stemsOf(parentId: string): SourceRow[] {
+    return this.db.prepare("SELECT * FROM sources WHERE parent_id = ? ORDER BY created_at DESC").all(parentId) as SourceRow[]
   }
 
   sourceById(id: string): SourceRow | null {
@@ -231,6 +242,8 @@ export class Store {
       jobId: row.job_id,
       proxyUrl: ready ? `/s/${row.id}/${this.proxyName(row)}` : null,
       thumbUrl: ready ? `/s/${row.id}/thumb.jpg` : null,
+      parentId: row.parent_id,
+      stem: row.stem,
       createdAt: row.created_at,
     }
   }

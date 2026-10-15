@@ -39,6 +39,8 @@ export class JobQueue {
     this.lanes = {
       fetch: { limit: opts.lanes?.fetch ?? 2, running: 0, queue: [] },
       render: { limit: opts.lanes?.render ?? 1, running: 0, queue: [] },
+      // Demucs owns the GPU while it runs; one at a time
+      separate: { limit: opts.lanes?.separate ?? 1, running: 0, queue: [] },
     }
     this.events.setMaxListeners(0)
   }

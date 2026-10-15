@@ -86,8 +86,17 @@ export function buildSequenceArgs(input: SequenceBuildInput): BuildOutput {
       chains.push(`${parts.join(",")}[${label}]`)
       visualLabels.push({ label, x: motion ? motion.x(x) : String(x), y: motion ? motion.y(y) : String(y), at: clip.at, end: clip.at + dur })
 
-      if (src.media === "video" && src.hasAudio && clip.volume > 0) {
-        audioLanes.push(audioLane(idx, clip.volume, 0, 0, clip.at, dur))
+      if (src.media === "video" && clip.volume > 0) {
+        if (clip.soundFrom) {
+          // the clip's sound comes from a stem: one more input, same cut
+          const stem = need(clip.soundFrom)
+          if (stem.media !== "audio" || !stem.hasAudio) throw new Error(`${clip.id}: soundFrom is not a sound`)
+          const sidx = inputs++
+          args.push("-ss", fmt(clip.in), "-t", fmt(dur), "-i", stem.path)
+          audioLanes.push(audioLane(sidx, clip.volume, 0, 0, clip.at, dur))
+        } else if (src.hasAudio) {
+          audioLanes.push(audioLane(idx, clip.volume, 0, 0, clip.at, dur))
+        }
       }
     }
   }

@@ -13,6 +13,7 @@ import { RateLimiter, rateLimit } from "./rateLimit.ts"
 import { JobQueue } from "./jobs.ts"
 import type { Encoder } from "./render/graph.ts"
 import { makeFetchRunner } from "./sources/fetch.ts"
+import { makeSeparateRunner } from "./sources/stems.ts"
 import { makeRenderRunner } from "./render/run.ts"
 import { sourcesRoutes } from "./routes/sources.ts"
 import { rendersRoutes } from "./routes/renders.ts"
@@ -23,6 +24,8 @@ import { storageRoutes } from "./routes/storage.ts"
 export type AppDeps = {
   encoder: Encoder
   ytdlpVersion?: string | null
+  /** demucs answered at boot — stem separation is offered */
+  stems?: boolean
 }
 
 // createApp is listen-free so tests can drive app.request() directly.
@@ -32,6 +35,7 @@ export function createApp(config: Config, db: DatabaseSync, deps: AppDeps): { ap
   const encoder = () => deps.encoder
   queue.register("fetch", makeFetchRunner(store, config, encoder))
   queue.register("render", makeRenderRunner(store, config, encoder))
+  queue.register("separate", makeSeparateRunner(store, config, encoder))
 
   const app = new Hono()
 
@@ -87,7 +91,7 @@ export function createApp(config: Config, db: DatabaseSync, deps: AppDeps): { ap
   const gate = requireKey(config.inviteKey)
 
   app.get("/healthz", (c) => {
-    const dto: HealthDto = { ok: true, encoder: deps.encoder, ytdlp: deps.ytdlpVersion ?? null }
+    const dto: HealthDto = { ok: true, encoder: deps.encoder, ytdlp: deps.ytdlpVersion ?? null, stems: deps.stems ?? false }
     return c.json(dto)
   })
   app.post("/api/verify-key", gate, (c) => c.body(null, 204))
@@ -95,7 +99,7 @@ export function createApp(config: Config, db: DatabaseSync, deps: AppDeps): { ap
   app.use("/api/sources", gate)
   app.use("/api/sources/*", gate)
   app.post("/api/sources", bodyLimit({ maxSize: config.uploadMaxBytes }))
-  app.route("/api/sources", sourcesRoutes(store, config, queue))
+  app.route("/api/sources", sourcesRoutes(store, config, queue, deps))
   app.route("/api/renders", rendersRoutes(store, config, queue, gate as never))
   app.route("/api/jobs", jobsRoutes(store, queue, gate))
   app.use("/api/storage", gate)

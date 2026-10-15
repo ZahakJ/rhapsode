@@ -15,6 +15,9 @@ RestartSec=5
 Environment=NODE_ENV=production
 # yt-dlp and ffmpeg scratch space stays inside the data dir (ReadWritePaths)
 Environment=TMPDIR=%h/Documents/side/rhapsode/data/tmp
+# stems: demucs lives in the uv tool venv, its model in ~/.cache/torch (both
+# readable under ProtectHome=read-only; download the model once by hand)
+Environment=DEMUCS_BIN=%h/.local/bin/demucs
 
 # sandboxing — no MemoryDenyWriteExecute (breaks the V8 JIT) and no
 # PrivateDevices (ffmpeg needs /dev/nvidia* for NVENC; see DeviceAllow)

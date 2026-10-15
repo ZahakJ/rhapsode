@@ -12,6 +12,9 @@ import { CANVAS, SOURCE_MAX_EDGE, editedDims, outputDurationOf, type Recipe, typ
 //   * amix carries normalize=0 (else each input is halved)
 //   * a lane the mode wants but the file lacks is replaced by anullsrc — a
 //     `[1:a]` reference to a silent file is a hard ffmpeg error
+//   * a stem (audio.baseFrom / overlayFrom) is one more input trimmed with
+//     the SAME -ss/-t as its parent, and the lane reads it instead of the
+//     parent's track — stems share their parent's timeline by construction
 //   * drawtext option order is load-bearing on ffmpeg 9 (textfile before
 //     fontfile, expansion=none last); a test pins it
 
@@ -131,10 +134,33 @@ export function buildArgs(input: BuildInput): BuildOutput {
   }
   args.push("-ss", fmt(recipe.overlay.in), "-t", fmt(ovLen), "-i", ov.path)
 
-  const hasBaseAudio = recipe.base.kind === "video" && base.hasAudio
+  // stems replace a lane's track: same cut, different file
+  let inputs = 2
+  const stemFor = (id: string | undefined, what: string): SourceInfo | null => {
+    if (!id) return null
+    const s = input.sources[id]
+    if (!s) throw new Error(`unknown ${what} stem ${id}`)
+    if (s.media !== "audio" || !s.hasAudio) throw new Error(`${what} stem is not a sound`)
+    return s
+  }
+  const baseStem = recipe.base.kind === "video" ? stemFor(recipe.audio.baseFrom, "base") : null
+  const ovStem = stemFor(recipe.audio.overlayFrom, "overlay")
+  let baseA = "[0:a]"
+  let ovA = "[1:a]"
+  if (baseStem && recipe.base.kind === "video") {
+    args.push("-ss", fmt(recipe.base.in), "-t", fmt(recipe.base.out - recipe.base.in), "-i", baseStem.path)
+    baseA = `[${inputs++}:a]`
+  }
+  if (ovStem) {
+    args.push("-ss", fmt(recipe.overlay.in), "-t", fmt(ovLen), "-i", ovStem.path)
+    ovA = `[${inputs++}:a]`
+  }
+
+  const hasBaseAudio = recipe.base.kind === "video" && (base.hasAudio || !!baseStem)
   const wantBase = recipe.audio.base !== "mute" && hasBaseAudio
-  const wantOv = recipe.audio.overlay !== "mute" && ov.hasAudio
+  const wantOv = recipe.audio.overlay !== "mute" && (ov.hasAudio || !!ovStem)
   const needSilence = !wantBase && !wantOv
+  const silenceA = `[${inputs}:a]`
   if (needSilence) args.push("-f", "lavfi", "-t", fmt(D), "-i", "anullsrc=r=48000:cl=stereo")
 
   // ——— video ———
@@ -184,12 +210,12 @@ export function buildArgs(input: BuildInput): BuildOutput {
   chains.push(`${vOut}${tail.join(",")}[v]`)
 
   // ——— audio ———
-  const baseLane = `[0:a]asetpts=PTS-STARTPTS,${AFORMAT},volume=${fmt(recipe.audio.baseGain)},apad`
+  const baseLane = `${baseA}asetpts=PTS-STARTPTS,${AFORMAT},volume=${fmt(recipe.audio.baseGain)},apad`
   const ovLane =
-    `[1:a]asetpts=PTS-STARTPTS,${AFORMAT},volume=${fmt(recipe.audio.overlayGain)},` +
+    `${ovA}asetpts=PTS-STARTPTS,${AFORMAT},volume=${fmt(recipe.audio.overlayGain)},` +
     `adelay=${Math.round(at * 1000)}:all=1,apad`
   if (needSilence) {
-    chains.push(`[2:a]anull[a]`)
+    chains.push(`${silenceA}anull[a]`)
   } else if (wantBase && wantOv) {
     if (recipe.audio.base === "duck") {
       chains.push(`${ovLane},asplit=2[oa][sc]`)

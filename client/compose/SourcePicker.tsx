@@ -10,6 +10,7 @@ import { CropPanel } from "./CropPanel.tsx"
 import { isRealEdit } from "../store/composeStore.ts"
 import type { Edit } from "../../shared/recipe.ts"
 import { fmtClock, parseClock } from "../util/time.ts"
+import { useStems } from "../store/stemsStore.ts"
 
 /**
  * One slot of the composition: paste a link, pick or drop a file, paste from
@@ -63,6 +64,7 @@ export function SourcePicker({
       .listSources()
       .then((list) => {
         if (!live) return
+        useStems.getState().seed(list)
         setRecent(list.filter((s) => s.status === "ready" && (allowImage ? s.media !== "audio" : s.media !== "image")))
       })
       .catch(() => {})
@@ -343,7 +345,7 @@ function SourceCard({ source }: { source: SourceDto }) {
       <div className="rh-srccard__meta">
         <div className="rh-srccard__title">{source.title || (source.kind === "url" ? source.url : "upload")}</div>
         <div className="rh-srccard__line mono">
-          {source.media === "image" ? "photo" : source.media === "audio" ? `♪ sound · ${fmtClock(source.duration ?? 0)}` : source.duration !== null ? fmtClock(source.duration) : "video"}
+          {source.media === "image" ? "photo" : source.media === "audio" ? `♪ ${source.stem ? `${source.stem} stem` : "sound"} · ${fmtClock(source.duration ?? 0)}` : source.duration !== null ? fmtClock(source.duration) : "video"}
           {source.width && source.height ? ` · ${source.width}×${source.height}` : ""}
           {source.media === "video" && !source.hasAudio ? " · silent" : ""}
         </div>
