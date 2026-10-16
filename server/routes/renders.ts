@@ -78,8 +78,16 @@ export function crossCheck(store: Store, recipe: Recipe, config: Config): string
     if (recipe.base.out - recipe.base.in > config.outMaxS) return `renders are capped at ${config.outMaxS}s`
   } else if (base.media !== "image") return "the base is a video, not an image"
   if (recipe.overlay.out > (ov.duration ?? 0) + 0.05) return "clip out point is past the end"
-  if (recipe.mode.kind === "dub" && ov.has_audio !== 1) return "a dub needs a clip with sound"
-  return null
+  if (recipe.mode.kind === "dub" && ov.has_audio !== 1 && !recipe.audio.overlayFrom) return "a dub needs a clip with sound"
+  const stemProblem = (id: string | undefined, parent: SourceRow, what: string): string | null => {
+    if (!id) return null
+    const s = store.sourceById(id)
+    if (!s || s.status !== "ready") return `the ${what} stem is not ready`
+    if (s.media !== "audio" || s.has_audio !== 1) return `the ${what} stem is not a sound`
+    if (s.parent_id !== parent.id) return `the ${what} stem was split from a different source`
+    return null
+  }
+  return stemProblem(recipe.audio.baseFrom, base, "base") ?? stemProblem(recipe.audio.overlayFrom, ov, "clip")
 }
 
 /** recipe_json holds either a bare v1 recipe (early renders) or {recipe} | {sequence}. */
@@ -121,6 +129,12 @@ export function crossCheckSequence(store: Store, seq: Sequence, config: Config):
         if (!s || s.status !== "ready") return `a clip's source is not ready (${c.id})`
         if (s.media === "audio") return `${s.title || c.id} is a sound — put it on an audio track`
         if (s.media === "video" && c.in >= (s.duration ?? 0)) return `${s.title || c.id}: in point is past the end`
+        if (c.soundFrom) {
+          const st = store.sourceById(c.soundFrom)
+          if (!st || st.status !== "ready") return `a clip's stem is not ready (${c.id})`
+          if (st.media !== "audio" || st.has_audio !== 1) return `${st.title || c.id} is not a sound`
+          if (st.parent_id !== s.id) return `${st.title || c.id} was split from a different source`
+        }
       }
     }
   }

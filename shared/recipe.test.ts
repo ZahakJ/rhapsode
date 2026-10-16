@@ -34,6 +34,8 @@ describe("recipe schema", () => {
     ["bad id", { ...ok, base: { kind: "video", source: "nope", in: 0, out: 1 } }],
     ["crop leaves the frame", { ...ok, overlay: { source: O, in: 0, out: 5, edit: { crop: { x: 0.6, y: 0, w: 0.5, h: 0.5 } } } }],
     ["bad rotation", { ...ok, overlay: { source: O, in: 0, out: 5, edit: { rotate: 45 as never } } }],
+    ["stem on a photo base", { ...ok, base: { kind: "image", source: B }, audio: { baseFrom: "e".repeat(24) } }],
+    ["stem equal to its parent", { ...ok, audio: { overlayFrom: O } }],
   ]
   for (const [name, input] of bad) {
     it(`rejects ${name}`, () => {

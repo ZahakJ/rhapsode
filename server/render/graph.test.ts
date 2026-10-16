@@ -6,8 +6,12 @@ const B = "a".repeat(24)
 const O = "b".repeat(24)
 const I = "c".repeat(24)
 const S = "d".repeat(24)
+const VB = "e".repeat(24)
+const MO = "f".repeat(24)
 
 const sources: Record<string, SourceInfo> = {
+  [VB]: { id: VB, path: "/d/base-vocals.flac", media: "audio", duration: 60, width: 0, height: 0, fps: 0, hasAudio: true },
+  [MO]: { id: MO, path: "/d/ov-music.flac", media: "audio", duration: 30, width: 0, height: 0, fps: 0, hasAudio: true },
   [B]: { id: B, path: "/d/base.mp4", media: "video", duration: 60, width: 1920, height: 1080, fps: 29.97, hasAudio: true },
   [O]: { id: O, path: "/d/ov.mp4", media: "video", duration: 30, width: 1280, height: 720, fps: 25, hasAudio: true },
   [I]: { id: I, path: "/d/img.png", media: "image", duration: 0, width: 4000, height: 3000, fps: 0, hasAudio: false },
@@ -113,6 +117,23 @@ describe("audio", () => {
     expect(filterComplex).toContain("[2:a]anull[a]")
     const silent = build({ ...dub, base: { kind: "video", source: S, in: 0, out: 5 }, overlay: { source: S, in: 0, out: 2 } })
     expect(silent.args).toContain("anullsrc=r=48000:cl=stereo")
+  })
+  it("stems are extra inputs cut like their parent, and the lane reads them instead", () => {
+    const { args, filterComplex } = build({ ...dub, audio: { base: "keep", baseFrom: VB, overlayFrom: MO } })
+    const i = args.indexOf("/d/ov.mp4")
+    expect(args.slice(i + 1, i + 13)).toEqual(["-ss", "12.5", "-t", "7.5", "-i", "/d/base-vocals.flac", "-ss", "3", "-t", "4", "-i", "/d/ov-music.flac"])
+    expect(filterComplex).toContain("[2:a]asetpts=PTS-STARTPTS")
+    expect(filterComplex).toContain("[3:a]asetpts=PTS-STARTPTS")
+    expect(filterComplex).not.toContain("[0:a]")
+    expect(filterComplex).not.toContain("[1:a]")
+    expect(filterComplex).toContain("[ba][oa]amix=inputs=2:duration=first:normalize=0[a]")
+    // a stem gives a silent file a voice; the silence input moves past the stems
+    const voiced = build({ ...dub, base: { kind: "video", source: S, in: 0, out: 5 }, audio: { base: "keep", baseFrom: VB } })
+    expect(voiced.args).not.toContain("anullsrc=r=48000:cl=stereo")
+    expect(voiced.filterComplex).toContain("[2:a]asetpts=PTS-STARTPTS")
+    const muted = build({ ...dub, audio: { base: "mute", overlay: "mute", overlayFrom: MO } })
+    expect(muted.filterComplex).toContain("[3:a]anull[a]")
+    expect(() => build({ ...dub, audio: { baseFrom: O } })).toThrow(/not a sound/)
   })
   it("single lanes never reference a missing stream", () => {
     const ovOnly = build({ ...dub, base: { kind: "image", source: I } })

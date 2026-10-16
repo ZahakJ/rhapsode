@@ -23,9 +23,21 @@ export function fontsFor(config: Config): Fonts {
 
 /** every source id a payload touches */
 export function payloadSources(p: RenderPayload): string[] {
-  if (p.recipe) return [p.recipe.base.source, p.recipe.overlay.source]
   const ids = new Set<string>()
-  for (const t of p.sequence?.tracks ?? []) if (t.kind !== "text") for (const c of t.clips) ids.add(c.source)
+  if (p.recipe) {
+    ids.add(p.recipe.base.source)
+    ids.add(p.recipe.overlay.source)
+    if (p.recipe.audio.baseFrom) ids.add(p.recipe.audio.baseFrom)
+    if (p.recipe.audio.overlayFrom) ids.add(p.recipe.audio.overlayFrom)
+    return [...ids]
+  }
+  for (const t of p.sequence?.tracks ?? []) {
+    if (t.kind === "text") continue
+    for (const c of t.clips) {
+      ids.add(c.source)
+      if ("soundFrom" in c && c.soundFrom) ids.add(c.soundFrom)
+    }
+  }
   if (p.sequence?.canvas.sourceOf) ids.add(p.sequence.canvas.sourceOf)
   return [...ids]
 }

@@ -659,6 +659,12 @@ export function validateSequence(seqIn: Sequence, sources: Record<string, Source
       if (src.status !== "ready") return { ok: false, error: `"${src.title}" is still preparing`, clipId: c.id }
       if (t.kind === "audio" && !src.hasAudio) return { ok: false, error: `"${src.title}" has no sound`, clipId: c.id }
       if (t.kind === "visual" && src.media === "video" && (c as VisualClip).in >= (src.duration ?? 0)) return { ok: false, error: "a clip starts past the end of its source", clipId: c.id }
+      const stemId = t.kind === "visual" ? (c as VisualClip).soundFrom : undefined
+      if (stemId) {
+        const stem = sources[stemId]
+        if (!stem || stem.status !== "ready") return { ok: false, error: `the ${stem?.stem ?? "stem"} of "${src.title}" is not ready — split it again`, clipId: c.id }
+        if (stem.parentId !== src.id) return { ok: false, error: "a clip takes its sound from a stem of a different source", clipId: c.id }
+      }
     }
   }
   if (duration(seq) > SEQ_MAX_SECONDS) return { ok: false, error: `sequences are capped at ${SEQ_MAX_SECONDS}s` }
@@ -701,12 +707,22 @@ export async function restoreStudioDraft(): Promise<boolean> {
   if (!parsed.success) return false
   const seq = parsed.data
   const ids = new Set<string>()
-  for (const t of seq.tracks) if (t.kind !== "text") for (const c of t.clips as VisualClip[]) ids.add(c.source)
+  for (const t of seq.tracks)
+    if (t.kind !== "text")
+      for (const c of t.clips as VisualClip[]) {
+        ids.add(c.source)
+        if (c.soundFrom) ids.add(c.soundFrom)
+      }
   const resolved = await Promise.all(
     [...ids].map((id) => api.getSource(id).then((x) => (x.status === "ready" ? x : null)).catch(() => null)),
   )
   const live = new Set(resolved.filter((x): x is SourceDto => !!x).map((x) => x.id))
-  for (const t of seq.tracks) if (t.kind !== "text") (t as { clips: AnyClip[] }).clips = (t.clips as VisualClip[]).filter((c) => live.has(c.source))
+  for (const t of seq.tracks)
+    if (t.kind !== "text") {
+      ;(t as { clips: AnyClip[] }).clips = (t.clips as VisualClip[]).filter((c) => live.has(c.source))
+      // a swept stem only costs the clip its stem, not the clip
+      for (const c of t.clips as VisualClip[]) if (c.soundFrom && !live.has(c.soundFrom)) delete c.soundFrom
+    }
   useStudio.getState().setSequence(seq, d.data.title, resolved.filter((x): x is SourceDto => !!x))
   return true
 }
@@ -732,15 +748,17 @@ export function sequenceFromRecipe(recipe: Recipe, base: SourceDto, overlay: Sou
         fit: recipe.output.fit,
         edit: recipe.base.edit,
         volume: recipe.base.kind === "video" ? (recipe.audio.base === "mute" ? 0 : recipe.audio.baseGain * (recipe.audio.base === "duck" ? 0.35 : 1)) : 1,
+        soundFrom: recipe.base.kind === "video" ? recipe.audio.baseFrom : undefined,
       },
     ],
   })
   if (recipe.mode.kind === "dub") {
+    // a stem shares its parent's timeline, so it can simply BE the dub's source
     tracks.push({
       id: "aud1",
       kind: "audio",
       name: "dub",
-      clips: [{ id: nid(), source: overlay.id, at: recipe.overlay.at, in: recipe.overlay.in, out: round3(recipe.overlay.in + ovLen), gain: recipe.audio.overlay === "mute" ? 0 : recipe.audio.overlayGain }],
+      clips: [{ id: nid(), source: recipe.audio.overlayFrom ?? overlay.id, at: recipe.overlay.at, in: recipe.overlay.in, out: round3(recipe.overlay.in + ovLen), gain: recipe.audio.overlay === "mute" ? 0 : recipe.audio.overlayGain }],
     })
   } else {
     const pip = recipe.mode.kind === "pip"
@@ -760,6 +778,7 @@ export function sequenceFromRecipe(recipe: Recipe, base: SourceDto, overlay: Sou
           box: pip ? pipBox : undefined,
           edit: recipe.overlay.edit,
           volume: recipe.audio.overlay === "mute" ? 0 : recipe.audio.overlayGain,
+          soundFrom: recipe.audio.overlayFrom,
         },
       ],
     })

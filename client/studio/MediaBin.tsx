@@ -7,6 +7,7 @@ import { isHttpUrl } from "../compose/ingestStore.ts"
 import { useAuth } from "../store/authStore.ts"
 import { fmtClock, parseClock } from "../util/time.ts"
 import { isAudioSource, isVisualSource, useStudio } from "./studioStore.ts"
+import { useStems } from "../store/stemsStore.ts"
 import { contextMenuProps } from "./ContextMenu.tsx"
 import type { MenuItem } from "./uiStore.ts"
 
@@ -36,9 +37,35 @@ export function MediaBin() {
     if (!verified) return
     api
       .listSources()
-      .then((list) => addSources(list.filter((s) => s.status === "ready")))
+      .then((list) => {
+        useStems.getState().seed(list)
+        addSources(list.filter((s) => s.status === "ready"))
+      })
       .catch(() => {})
   }, [verified, addSources])
+
+  const stemsOf = useStems((s) => s.byParent)
+  const splitStems = (s: SourceDto) => {
+    if (needKey()) return
+    const key = `s:${s.id}`
+    setPending((p) => [...p.filter((x) => x.key !== key), { key, label: `splitting ${s.title || "source"} into vocals + music`, pct: null }])
+    const unsub = useStems.subscribe((st) => {
+      const e = st.byParent[s.id]
+      if (e?.status === "running") setPending((p) => p.map((x) => (x.key === key ? { ...x, pct: e.progress } : x)))
+    })
+    useStems
+      .getState()
+      .ensure(s.id)
+      .then((both) => {
+        addSources([both.vocals, both.music])
+        toast(`"${s.title || "source"}" split — vocals and music are in the bin`)
+      })
+      .catch((e) => toast(e instanceof Error ? e.message : "could not split that", "danger"))
+      .finally(() => {
+        unsub()
+        setPending((p) => p.filter((x) => x.key !== key))
+      })
+  }
 
   const list = Object.values(sources)
     .filter((s) => s.status === "ready")
@@ -153,6 +180,15 @@ export function MediaBin() {
       { kind: "item", label: "Add to a new track", run: () => { const id = st.addTrack(isVisualSource(s) ? "visual" : "audio"); st.addClipFromSource(s, { trackId: id }) } },
     ]
     if (s.media === "video" && s.hasAudio) items.push({ kind: "item", label: "Add as sound only", run: () => { const t = [...st.seq.tracks].reverse().find((x) => x.kind === "audio")?.id ?? st.addTrack("audio"); st.addClipFromSource(s, { trackId: t }) } })
+    if (s.hasAudio && s.kind !== "stem") {
+      const e = stemsOf[s.id]
+      if (e?.status === "ready") {
+        items.push({ kind: "sub", label: "Stems", items: [
+          { kind: "item", label: "Add vocals at playhead", run: () => { addSources([e.stems.vocals]); addClip(e.stems.vocals) } },
+          { kind: "item", label: "Add music at playhead", run: () => { addSources([e.stems.music]); addClip(e.stems.music) } },
+        ] })
+      } else items.push({ kind: "item", label: e?.status === "running" ? "Splitting vocals + music…" : "Split into vocals + music", run: () => splitStems(s) })
+    }
     if (selectedStills.length >= 2) items.push({ kind: "item", label: `Make a montage of ${selectedStills.length} stills`, run: () => makeMontage(selectedStills, each, 0.5) })
     items.push({ kind: "sep" })
     items.push({ kind: "item", label: "Delete source", run: () => {
@@ -278,7 +314,7 @@ export function MediaBin() {
               <div className="st-bin__thumb">
                 {s.thumbUrl ? <img src={s.thumbUrl} alt="" loading="lazy" /> : <span className="st-bin__glyph">{audioOnly ? "♪" : "▣"}</span>}
                 {audioOnly && s.thumbUrl && <span className="st-bin__glyph st-bin__glyph--over">♪</span>}
-                <span className="st-bin__kind mono">{s.media === "image" ? "still" : audioOnly ? `♪ ${fmtClock(s.duration ?? 0)}` : fmtClock(s.duration ?? 0)}</span>
+                <span className={`st-bin__kind mono${s.stem ? ` st-bin__kind--${s.stem}` : ""}`}>{s.media === "image" ? "still" : s.stem ? `${s.stem} ${fmtClock(s.duration ?? 0)}` : audioOnly ? `♪ ${fmtClock(s.duration ?? 0)}` : fmtClock(s.duration ?? 0)}</span>
               </div>
               <div className="st-bin__name">{s.title || s.kind}</div>
               <button

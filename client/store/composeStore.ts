@@ -28,6 +28,9 @@ export type Output = Recipe["output"]
 export type ComposeState = {
   base: SourceDto | null
   overlay: SourceDto | null
+  /** a stem (vocals / music) taking the place of a lane's own sound; null = the file's track */
+  baseStem: SourceDto | null
+  overlayStem: SourceDto | null
   baseIn: number
   baseOut: number
   /** crop / rotate / mirror per source; null = untouched */
@@ -48,6 +51,8 @@ export type ComposeState = {
 
   setBase: (s: SourceDto | null) => void
   setOverlay: (s: SourceDto | null) => void
+  setBaseStem: (s: SourceDto | null) => void
+  setOverlayStem: (s: SourceDto | null) => void
   patch: (p: Partial<ComposeState>) => void
   setMode: (kind: Mode["kind"]) => void
   addCaption: (text?: string) => void
@@ -67,6 +72,8 @@ const DEFAULT_MODE: Mode = { kind: "dub" }
 const blank = {
   base: null,
   overlay: null,
+  baseStem: null as SourceDto | null,
+  overlayStem: null as SourceDto | null,
   baseIn: 0,
   baseOut: 0,
   baseEdit: null as Edit | null,
@@ -101,20 +108,23 @@ export const useCompose = create<ComposeState>()((set, get) => ({
   ...blank,
 
   setBase: (s) => {
-    if (!s) return set({ base: null, baseIn: 0, baseOut: 0, imageDuration: null, baseEdit: null })
+    if (!s) return set({ base: null, baseIn: 0, baseOut: 0, imageDuration: null, baseEdit: null, baseStem: null })
     if (s.media === "video") {
       const c = defaultCut(s)
-      set({ base: s, baseIn: c.in, baseOut: c.out, imageDuration: null, at: 0, baseEdit: null })
+      set({ base: s, baseIn: c.in, baseOut: c.out, imageDuration: null, at: 0, baseEdit: null, baseStem: null })
     } else {
-      set({ base: s, baseIn: 0, baseOut: 0, imageDuration: null, at: 0, baseEdit: null })
+      set({ base: s, baseIn: 0, baseOut: 0, imageDuration: null, at: 0, baseEdit: null, baseStem: null })
     }
   },
   setOverlay: (s) => {
-    if (!s) return set({ overlay: null, ovIn: 0, ovOut: 0, overlayEdit: null })
+    if (!s) return set({ overlay: null, ovIn: 0, ovOut: 0, overlayEdit: null, overlayStem: null })
     const c = defaultCut(s)
     // a sound has no picture: only a dub makes sense
-    set({ overlay: s, ovIn: c.in, ovOut: c.out, overlayEdit: null, ...(s.media === "audio" ? { mode: { kind: "dub" } as Mode } : {}) })
+    set({ overlay: s, ovIn: c.in, ovOut: c.out, overlayEdit: null, overlayStem: null, ...(s.media === "audio" ? { mode: { kind: "dub" } as Mode } : {}) })
   },
+  // a stem only makes sense for the source it was split from
+  setBaseStem: (s) => set((st) => ({ baseStem: s && st.base && s.parentId === st.base.id ? s : null })),
+  setOverlayStem: (s) => set((st) => ({ overlayStem: s && st.overlay && s.parentId === st.overlay.id ? s : null })),
   patch: (p) => set(p),
   setMode: (kind) => {
     const cur = get().mode
@@ -160,12 +170,17 @@ export const useCompose = create<ComposeState>()((set, get) => ({
       s.base.media === "video"
         ? { kind: "video", source: s.base.id, in: s.baseIn, out: s.baseOut, ...be }
         : { kind: "image", source: s.base.id, ...(s.imageDuration ? { duration: s.imageDuration } : {}), ...be }
+    const audio: RecipeInput["audio"] = { ...s.audio }
+    if (s.baseStem && s.base.media === "video" && s.baseStem.parentId === s.base.id) audio.baseFrom = s.baseStem.id
+    else delete audio.baseFrom
+    if (s.overlayStem && s.overlayStem.parentId === s.overlay.id) audio.overlayFrom = s.overlayStem.id
+    else delete audio.overlayFrom
     return {
       v: 1,
       base,
       overlay: { source: s.overlay.id, in: s.ovIn, out: s.ovOut, at: s.at, ...oe },
       mode: s.mode,
-      audio: s.audio,
+      audio,
       captions: s.captions,
       output: s.output,
     }
@@ -175,10 +190,13 @@ export const useCompose = create<ComposeState>()((set, get) => ({
     const byId = new Map(sources.map((x) => [x.id, x]))
     const base = byId.get(recipe.base.source) ?? null
     const overlay = byId.get(recipe.overlay.source) ?? null
+    const { baseFrom, overlayFrom, ...audio } = recipe.audio
     set({
       ...blank,
       base,
       overlay,
+      baseStem: (baseFrom && byId.get(baseFrom)) || null,
+      overlayStem: (overlayFrom && byId.get(overlayFrom)) || null,
       baseIn: recipe.base.kind === "video" ? recipe.base.in : 0,
       baseOut: recipe.base.kind === "video" ? recipe.base.out : 0,
       baseEdit: recipe.base.edit ?? null,
@@ -188,7 +206,7 @@ export const useCompose = create<ComposeState>()((set, get) => ({
       ovOut: recipe.overlay.out,
       at: recipe.overlay.at,
       mode: recipe.mode,
-      audio: recipe.audio,
+      audio,
       captions: recipe.captions,
       output: recipe.output,
     })
@@ -202,6 +220,8 @@ const DRAFT_KEY = "rhapsode:v1:draft"
 const draftSchema = z.object({
   baseId: sourceIdSchema.nullable(),
   overlayId: sourceIdSchema.nullable(),
+  baseStemId: sourceIdSchema.nullable().default(null),
+  overlayStemId: sourceIdSchema.nullable().default(null),
   baseIn: z.number(),
   baseOut: z.number(),
   baseEdit: editSchema.nullable().default(null),
@@ -223,6 +243,8 @@ export function saveDraft(): void {
   const draft: Draft = {
     baseId: s.base?.id ?? null,
     overlayId: s.overlay?.id ?? null,
+    baseStemId: s.baseStem?.id ?? null,
+    overlayStemId: s.overlayStem?.id ?? null,
     baseIn: s.baseIn,
     baseOut: s.baseOut,
     baseEdit: s.baseEdit,
@@ -264,11 +286,13 @@ export function clearDraft(): void {
 }
 
 /** Apply a draft whose sources have been re-resolved against the server. */
-export function applyDraft(draft: Draft, base: SourceDto | null, overlay: SourceDto | null): void {
+export function applyDraft(draft: Draft, base: SourceDto | null, overlay: SourceDto | null, stems: { base?: SourceDto | null; overlay?: SourceDto | null } = {}): void {
   useCompose.setState({
     ...blank,
     base,
     overlay,
+    baseStem: base && stems.base && stems.base.parentId === base.id ? stems.base : null,
+    overlayStem: overlay && stems.overlay && stems.overlay.parentId === overlay.id ? stems.overlay : null,
     baseIn: base?.media === "video" ? clamp(draft.baseIn, 0, base.duration ?? 0) : 0,
     baseOut: base?.media === "video" ? clamp(draft.baseOut, 0, base.duration ?? 0) : 0,
     imageDuration: base?.media === "image" ? draft.imageDuration : null,

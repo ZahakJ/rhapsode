@@ -1638,3 +1638,19 @@
   display: block;
   cursor: pointer;
 }
+
+/* ————— stems: the take switch ————— */
+.rh-take .ms-seg__opt--busy {
+  animation: rh-pulse 1.2s ease-in-out infinite;
+}
+.rh-take__job {
+  margin-top: var(--sp-1);
+}
+.rh-take__err {
+  color: var(--danger, #ff7a59);
+}
+@keyframes rh-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}

@@ -102,8 +102,14 @@ export function watchJob(id: string, onEvent: (ev: JobEvent) => void): () => voi
 }
 
 /** Human label for a job stage. */
-export function stageLabel(stage: string | null | undefined, kind: "fetch" | "render"): string {
+export function stageLabel(stage: string | null | undefined, kind: "fetch" | "render" | "separate"): string {
   switch (stage) {
+    case "extract":
+      return "pulling the sound out"
+    case "separate":
+      return "separating voice from music"
+    case "pack":
+      return "packing the stems"
     case "metadata":
       return "reading the page"
     case "download":
@@ -122,6 +128,6 @@ export function stageLabel(stage: string | null | undefined, kind: "fetch" | "re
     case "poster":
       return "poster frame"
     default:
-      return kind === "fetch" ? "fetching" : "rendering"
+      return kind === "fetch" ? "fetching" : kind === "separate" ? "splitting" : "rendering"
   }
 }

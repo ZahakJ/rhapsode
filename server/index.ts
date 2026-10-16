@@ -5,6 +5,7 @@ import { openDb } from "./db.ts"
 import { createApp } from "./app.ts"
 import { detectEncoder, selfTestDrawtext, ytdlpVersion } from "./render/encoder.ts"
 import { SAFE_PATH } from "./render/graph.ts"
+import { probeDemucs } from "./sources/stems.ts"
 import { startSweeper } from "./sweep.ts"
 
 const config = loadConfig()
@@ -24,12 +25,14 @@ if (!fontsDirOk) {
   process.exit(1)
 }
 const ytdlp = await ytdlpVersion()
-console.log(`[rhapsode] encoder ${encoder}${config.renderEncoder ? " (forced)" : ""} · yt-dlp ${ytdlp ?? "MISSING"}`)
+const stems = await probeDemucs(config.demucsBin)
+console.log(`[rhapsode] encoder ${encoder}${config.renderEncoder ? " (forced)" : ""} · yt-dlp ${ytdlp ?? "MISSING"} · stems ${stems ? `demucs/${config.demucsModel}` : "OFF"}`)
+if (!stems) console.warn(`[rhapsode] ⚠ demucs not found (${config.demucsBin || "disabled"}) — vocal/music splitting is off; uv tool install demucs --with torch --with torchaudio --with soundfile`)
 if (fontProblem) console.warn(`[rhapsode] ⚠ caption font failed to load — captions will fail at render time: ${fontProblem}`)
 if (!ytdlp) console.warn("[rhapsode] ⚠ yt-dlp not found on PATH — link sources will fail")
 
 const db = openDb(path.join(config.dataDir, "rhapsode.sqlite"))
-const { app, store, queue } = createApp(config, db, { encoder, ytdlpVersion: ytdlp })
+const { app, store, queue } = createApp(config, db, { encoder, ytdlpVersion: ytdlp, stems })
 const stale = queue.recoverAtBoot()
 if (stale) console.log(`[rhapsode] failed ${stale} job(s) left over from the previous run`)
 startSweeper(store, config)

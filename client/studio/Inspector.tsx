@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import type { Edit } from "../../shared/recipe.ts"
 import type { AudioClip, Cue, VisualClip } from "../../shared/sequence.ts"
 import { CropPanel } from "../compose/CropPanel.tsx"
+import { StemTake } from "../components/StemTake.tsx"
 import { isRealEdit } from "../store/composeStore.ts"
 import { clamp, fmtTime } from "../util/time.ts"
 import { NumField, NumInput, Section, Seg, TimeField } from "./fields.tsx"
@@ -53,8 +54,10 @@ function VisualInspector({ clip, srcName, layer }: { clip: VisualClip; srcName?:
   }, [])
   const patch = useStudio((s) => s.patchClip)
   const sources = useStudio((s) => s.sources)
+  const addSources = useStudio((s) => s.addSources)
   const src = sources[clip.source]
   const isVideo = src?.media === "video"
+  const stem = clip.soundFrom ? sources[clip.soundFrom] ?? null : null
   const srcDur = src?.duration ?? Infinity
   const set = (p: Partial<VisualClip>) => patch(clip.id, p)
   const kbName = (Object.keys(KB_PRESETS) as Array<keyof typeof KB_PRESETS>).find((k) => JSON.stringify(KB_PRESETS[k]) === JSON.stringify(clip.kenBurns)) ?? (clip.kenBurns ? "custom" : "none")
@@ -89,8 +92,14 @@ function VisualInspector({ clip, srcName, layer }: { clip: VisualClip; srcName?:
           <NumField label="fade in" value={clip.fadeIn} min={0} max={5} step={0.1} onCommit={(fadeIn) => set({ fadeIn })} suffix=" s" />
           <NumField label="fade out" value={clip.fadeOut} min={0} max={5} step={0.1} onCommit={(fadeOut) => set({ fadeOut })} suffix=" s" />
         </div>
-        {isVideo && <NumField label="clip sound" value={clip.volume} min={0} max={2} step={0.05} onCommit={(volume) => set({ volume })} fmt={(v) => (v === 0 ? "muted" : `${Math.round(v * 100)}%`)} />}
       </Section>
+      {isVideo && src && (src.hasAudio || clip.soundFrom) && (
+        <Section title="sound" right={stem ? <span className="rh-hint st-inspector__src">{stem.stem} stem</span> : undefined}>
+          <NumField label="level" value={clip.volume} min={0} max={2} step={0.05} onCommit={(volume) => set({ volume })} fmt={(v) => (v === 0 ? "muted" : `${Math.round(v * 100)}%`)} />
+          <StemTake source={src} value={stem} onChange={(s) => set({ soundFrom: s?.id })} onStems={(both) => addSources([both.vocals, both.music])} label="take" />
+          <p className="rh-hint">vocals or music only — split once by Demucs, then instant. The stems land in the bin too.</p>
+        </Section>
+      )}
       <Section title="motion" right={clip.transform ? <button className="st-tl__hb" onClick={() => set({ transform: undefined })} title="reset motion">↺</button> : undefined}>
         <div className="st-grid2">
           <NumInput label="x" value={(clip.transform ?? NEUTRAL_T).x * 100} min={-200} max={200} step={1} unit="%" neutral={0} onCommit={(v) => set({ transform: { ...(clip.transform ?? NEUTRAL_T), x: v / 100 } })} />

@@ -1806,3 +1806,14 @@
   cursor: pointer;
   z-index: 3;
 }
+
+/* stems in the bin: vocals in the accent, music in ice */
+.st-bin__kind--vocals {
+  color: var(--accent);
+}
+.st-bin__kind--music {
+  color: var(--ice, #7dd3fc);
+}
+.st-inspector .rh-take .rh-seg__label {
+  font-size: var(--fs-xs);
+}

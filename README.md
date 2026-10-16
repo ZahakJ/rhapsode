@@ -16,6 +16,10 @@ The quick path: a base, a clip on top, and how they meet — **dub** (keep, duck
 
 <p align="center"><img src="docs/assets/compose.png" alt="The cut view" width="900"></p>
 
+## Stems
+
+Any piece with sound can be split into **vocals** and **music** on your own GPU (Demucs). Pick "vocals" for the clip on top and "music" for the base and you have a mashup: one video's voice over another video's song. Stems are split once per source, then instant, and they show up in the studio's bin as their own sounds.
+
 ## Studio
 
 When two pieces are not enough: any number of video, music and text tracks. Photos that pan and zoom, clips that dissolve into each other, floating boxes with opacity, subtitles with a second line for translations and SRT in and out, a one-click photo montage. Premiere-style shortcuts, right-click menus, dockable panels. Still one recipe, still one ffmpeg command.
@@ -61,6 +65,8 @@ Things the code is careful about, because each one bit once:
 - a restart marks in-flight jobs failed; nothing pretends
 
 ## Deploy
+
+Stems need Demucs: `uv tool install demucs --with torch --with torchaudio --with soundfile`, then run `demucs` once on any file so the model downloads. Without it everything else works and the split switch says so.
 
 `deploy/rhapsode.service` is a systemd user unit (sandboxed, with the device rules NVENC needs). The server binds loopback only; put a Cloudflare tunnel or a reverse proxy in front of it. Set `PUBLIC_ORIGIN` so share links carry your domain. Storage is capped (`DISK_CAP_BYTES`, `RENDER_CAP_BYTES`) and old unreferenced sources are swept.
 

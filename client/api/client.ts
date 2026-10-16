@@ -5,6 +5,7 @@ import type {
   RenderDto,
   RenderPage,
   SourceDto,
+  StemsCreated,
   StorageDto,
 } from "../../shared/recipe.ts"
 import type { Sequence, SequenceInput } from "../../shared/sequence.ts"
@@ -67,6 +68,8 @@ export const api = {
   listSources: () => request<SourceDto[]>("/api/sources"),
   deleteSource: (id: string) =>
     request<void>(`/api/sources/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /** vocals + music of a source; 200 with job null when they already exist */
+  splitStems: (id: string) => request<StemsCreated>(`/api/sources/${encodeURIComponent(id)}/stems`, { method: "POST" }),
 
   /**
    * Raw-body upload with progress — fetch has no upload progress, so this is

@@ -10,6 +10,8 @@ export type RunOpts = {
   timeoutMs?: number
   signal?: AbortSignal
   onStdoutLine?: (line: string) => void
+  /** per-line stderr too (split on \r as well as \n — progress bars redraw in place) */
+  onStderrLine?: (line: string) => void
   /** bytes of stderr kept for the error message */
   stderrKeep?: number
 }
@@ -38,6 +40,7 @@ export function runProc(cmd: string, args: string[], opts: RunOpts = {}): Promis
     let stderr = ""
     let stdout = ""
     let pending = ""
+    let pendingErr = ""
     let reason: string | undefined
     let timer: NodeJS.Timeout | undefined
     let killer: NodeJS.Timeout | undefined
@@ -65,8 +68,15 @@ export function runProc(cmd: string, args: string[], opts: RunOpts = {}): Promis
       } else if (stdout.length < 64 * 1024 * 1024) stdout += s
     })
     child.stderr.on("data", (d: Buffer) => {
-      stderr += d.toString()
+      const s = d.toString()
+      stderr += s
       if (stderr.length > keep) stderr = stderr.slice(-keep)
+      if (opts.onStderrLine) {
+        pendingErr += s
+        const lines = pendingErr.split(/\r\n|\r|\n/)
+        pendingErr = lines.pop() ?? ""
+        for (const l of lines) if (l) opts.onStderrLine(l)
+      }
     })
     child.on("error", (err) => {
       cleanup()
@@ -75,6 +85,7 @@ export function runProc(cmd: string, args: string[], opts: RunOpts = {}): Promis
     child.on("close", (code) => {
       cleanup()
       if (pending && opts.onStdoutLine) opts.onStdoutLine(pending)
+      if (pendingErr && opts.onStderrLine) opts.onStderrLine(pendingErr)
       if (reason) reject(new ProcError(cmd, code, stderr, reason))
       else if (code !== 0) reject(new ProcError(cmd, code, stderr))
       else resolve({ stdout, stderr })

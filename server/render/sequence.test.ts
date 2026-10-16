@@ -6,7 +6,9 @@ import { sequenceSchema, parseSrt, formatSrt, type SequenceInput } from "../../s
 const V = "a".repeat(24)
 const P = "b".repeat(24)
 const M = "c".repeat(24)
+const ST = "d".repeat(24)
 const sources: Record<string, SourceInfo> = {
+  [ST]: { id: ST, path: "/d/v-vocals.flac", media: "audio", duration: 60, width: 0, height: 0, fps: 0, hasAudio: true },
   [V]: { id: V, path: "/d/v.mp4", media: "video", duration: 60, width: 1920, height: 1080, fps: 30, hasAudio: true },
   [P]: { id: P, path: "/d/p.jpg", media: "image", duration: 0, width: 4000, height: 3000, fps: 0, hasAudio: false },
   [M]: { id: M, path: "/d/m.m4a", media: "video", duration: 200, width: 0, height: 0, fps: 0, hasAudio: true },
@@ -71,6 +73,14 @@ describe("sequence builder", () => {
     expect(r.filterComplex).toContain("textfile=/j/cue0s.txt:fontfile=/f/plexar.ttf:fontsize=47:fontcolor=0xffd27a")
     expect(r.filterComplex).toContain("textfile=/j/cue1.txt:fontfile=/f/plex.woff:fontsize=59:fontcolor=0xffffff:box=1:boxcolor=black@0.55:boxborderw=21:x=192:y=950-text_h/2:text_align=L+M")
     expect(r.filterComplex).toContain("expansion=none[v]")
+  })
+  it("a clip's soundFrom swaps its own track for a stem cut the same way", () => {
+    const r = build({ v: 1, tracks: [{ id: "t", kind: "visual", clips: [{ id: "c", source: V, at: 2, duration: 5, in: 10, volume: 0.8, soundFrom: ST }] }] })
+    const i = r.args.indexOf("/d/v.mp4")
+    expect(r.args.slice(i + 1, i + 7)).toEqual(["-ss", "10", "-t", "5", "-i", "/d/v-vocals.flac"])
+    expect(r.filterComplex).toContain("[1:a]asetpts=PTS-STARTPTS,aformat=sample_rates=48000:channel_layouts=stereo,volume=0.8,adelay=2000:all=1,apad[a]")
+    expect(r.filterComplex).not.toContain("[0:a]")
+    expect(() => build({ v: 1, tracks: [{ id: "t", kind: "visual", clips: [{ id: "c", source: V, at: 0, duration: 1, soundFrom: P }] }] })).toThrow(/not a sound/)
   })
   it("falls back to silence and a bare background", () => {
     const r = build({ v: 1, tracks: [{ id: "t", kind: "text", clips: [{ id: "x", at: 0, duration: 2, text: "only words" }] }] })

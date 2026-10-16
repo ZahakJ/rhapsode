@@ -40,6 +40,14 @@ export type Config = {
   keepFailedJobs: boolean
   /** hours a source survives unreferenced before the sweep takes it */
   sourceTtlHours: number
+  /** the Demucs executable (uv tool install demucs); "" disables stems */
+  demucsBin: string
+  /** Demucs pretrained model — htdemucs is fast, htdemucs_ft is finer and ~4× slower */
+  demucsModel: string
+  /** sources longer than this are refused for separation */
+  stemMaxS: number
+  stemTimeoutMs: number
+  maxPendingStems: number
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -81,6 +89,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     outMaxS: num(env.OUT_MAX_S, 180),
     keepFailedJobs: env.JOB_KEEP_FAILED === "1",
     sourceTtlHours: num(env.SOURCE_TTL_HOURS, 24 * 7),
+    demucsBin: env.DEMUCS_BIN ?? "demucs",
+    demucsModel: env.DEMUCS_MODEL ?? "htdemucs",
+    stemMaxS: num(env.STEM_MAX_S, 900),
+    stemTimeoutMs: num(env.STEM_TIMEOUT_MS, 30 * 60_000),
+    maxPendingStems: num(env.MAX_PENDING_STEMS, 3),
   }
 }
 
