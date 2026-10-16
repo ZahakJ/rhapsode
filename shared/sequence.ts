@@ -74,6 +74,8 @@ export const visualClipSchema = z.object({
   look: lookSchema.optional(),
   /** the video's own sound, 0 = silent */
   volume: z.number().min(0).max(2).default(1),
+  /** take the sound from this stem (vocals / music of the same source) instead of the file's own track */
+  soundFrom: sourceIdSchema.optional(),
 })
 
 export const audioClipSchema = z.object({
@@ -150,6 +152,7 @@ export const sequenceSchema = z
           seen(c.id, ci)
           clips++
           if (c.fit === "free" && !c.box) ctx.addIssue({ code: "custom", path: ["tracks", ti, "clips", ci, "box"], message: "free placement needs a box" })
+          if (c.soundFrom && c.soundFrom === c.source) ctx.addIssue({ code: "custom", path: ["tracks", ti, "clips", ci, "soundFrom"], message: "a stem must differ from its parent" })
         })
       }
     })

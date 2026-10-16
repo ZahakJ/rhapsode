@@ -72,6 +72,13 @@ export const audioSchema = z.object({
   overlay: z.enum(["keep", "mute"]).default("keep"),
   baseGain: z.number().min(0).max(2).default(1),
   overlayGain: z.number().min(0).max(2).default(1),
+  /**
+   * Take a lane's sound from a stem instead of the file's own track. A stem
+   * is a derived audio source (vocals / music, split by Demucs) on the same
+   * timeline as its parent, so the lane's in/out apply unchanged.
+   */
+  baseFrom: sourceIdSchema.optional(),
+  overlayFrom: sourceIdSchema.optional(),
 })
 
 export const pipBoxSchema = z.object({
@@ -132,6 +139,12 @@ export const recipeSchema = z
       if (c.from !== undefined && c.to !== undefined && c.to <= c.from)
         ctx.addIssue({ code: "custom", path: ["captions", i, "to"], message: "to must exceed from" })
     }
+    if (r.audio.baseFrom && r.base.kind !== "video")
+      ctx.addIssue({ code: "custom", path: ["audio", "baseFrom"], message: "a photo has no sound to replace" })
+    if (r.audio.baseFrom && r.audio.baseFrom === r.base.source)
+      ctx.addIssue({ code: "custom", path: ["audio", "baseFrom"], message: "a stem must differ from its parent" })
+    if (r.audio.overlayFrom && r.audio.overlayFrom === r.overlay.source)
+      ctx.addIssue({ code: "custom", path: ["audio", "overlayFrom"], message: "a stem must differ from its parent" })
   })
 
 export type Recipe = z.infer<typeof recipeSchema>
@@ -153,9 +166,12 @@ export function outputDurationOf(r: RecipeShape): number {
 
 // ——— DTOs ———
 
-export type SourceKind = "url" | "upload"
+export type SourceKind = "url" | "upload" | "stem"
 export type SourceMedia = "video" | "image" | "audio"
 export type SourceStatus = "pending" | "ready" | "failed"
+/** What Demucs pulled out of a parent: the voice, or everything but the voice. */
+export type StemKind = "vocals" | "music"
+export const STEM_KINDS: readonly StemKind[] = ["vocals", "music"]
 
 export type SourceDto = {
   id: string
@@ -175,6 +191,9 @@ export type SourceDto = {
   jobId: string | null
   proxyUrl: string | null
   thumbUrl: string | null
+  /** stems only: the source this was split from, and which half it is */
+  parentId: string | null
+  stem: StemKind | null
   createdAt: number
 }
 
@@ -193,7 +212,7 @@ export type RenderDto = {
 
 export type RenderPage = { items: RenderDto[]; nextCursor: string | null }
 
-export type JobKind = "fetch" | "render"
+export type JobKind = "fetch" | "render" | "separate"
 export type JobStatus = "queued" | "running" | "done" | "failed" | "cancelled"
 
 export type JobDto = {
@@ -223,7 +242,12 @@ export type HealthDto = {
   ok: true
   encoder: string
   ytdlp: string | null
+  /** stem separation (Demucs) answers on this box */
+  stems: boolean
 }
+
+/** POST /api/sources/:id/stems — both halves, plus the job making them (null when they already exist). */
+export type StemsCreated = { stems: SourceDto[]; job: JobDto | null }
 
 export type StorageDto = {
   usedBytes: number

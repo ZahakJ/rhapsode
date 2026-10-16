@@ -13,7 +13,7 @@ import { clamp, fmtTC } from "../util/time.ts"
  */
 export function Stage() {
   const s = useCompose()
-  const { base, overlay, mode, output, captions, at, ovIn, ovOut, audio, baseEdit, overlayEdit } = s
+  const { base, overlay, mode, output, captions, at, ovIn, ovOut, audio, baseEdit, overlayEdit, baseStem, overlayStem } = s
   const clock = usePreview((p) => p.clock)
   const playing = usePreview((p) => p.playing)
   const setClock = usePreview((p) => p.setClock)
@@ -22,6 +22,9 @@ export function Stage() {
   const stageRef = useRef<HTMLDivElement>(null)
   const baseVideo = useRef<HTMLVideoElement>(null)
   const ovVideo = useRef<HTMLMediaElement>(null)
+  // stems ride alongside: hidden <audio>s kept in step with the lane they replace
+  const baseStemAudio = useRef<HTMLAudioElement>(null)
+  const ovStemAudio = useRef<HTMLAudioElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
   const rafRef = useRef<number | null>(null)
   const t0Ref = useRef(0)
@@ -155,40 +158,67 @@ export function Stage() {
     setClock(0)
   }, [isVideoBase, s.baseIn, playing, setClock])
 
-  // ——— keep the overlay video in step ———
+  // ——— keep the overlay (and any stems) in step ———
   const inWindow = clock >= at && clock < at + ovLen
   useEffect(() => {
     const ov = ovVideo.current
-    if (!ov) return
-    if (!playing) {
-      ov.pause()
-      const rest = inWindow ? ovIn + (clock - at) : ovIn
-      if (Math.abs(ov.currentTime - rest) > 0.05) ov.currentTime = rest
-      return
+    const want = inWindow ? ovIn + (clock - at) : ovIn
+    for (const el of [ov, ovStemAudio.current]) {
+      if (!el) continue
+      if (!playing) {
+        el.pause()
+        if (Math.abs(el.currentTime - want) > 0.05) el.currentTime = want
+      } else if (inWindow) {
+        if (Math.abs(el.currentTime - want) > 0.3) el.currentTime = want
+        if (el.paused) void el.play().catch(() => {})
+      } else {
+        if (!el.paused) el.pause()
+        el.currentTime = ovIn
+      }
     }
-    if (inWindow) {
-      const want = ovIn + (clock - at)
-      if (Math.abs(ov.currentTime - want) > 0.3) ov.currentTime = want
-      if (ov.paused) void ov.play().catch(() => {})
-    } else {
-      if (!ov.paused) ov.pause()
-      ov.currentTime = ovIn
+    // the base's stem follows the base video, which is the clock itself
+    const bs = baseStemAudio.current
+    const bv = baseVideo.current
+    if (bs && bv) {
+      if (!playing) {
+        bs.pause()
+        if (Math.abs(bs.currentTime - bv.currentTime) > 0.05) bs.currentTime = bv.currentTime
+      } else {
+        if (Math.abs(bs.currentTime - bv.currentTime) > 0.3) bs.currentTime = bv.currentTime
+        if (bs.paused) void bs.play().catch(() => {})
+      }
     }
   }, [clock, playing, inWindow, ovIn, at])
 
-  // audio per option (duck ≈ base at a quarter during the overlay window)
+  // audio per option (duck ≈ base at a quarter during the overlay window);
+  // a lane taking a stem mutes its own track and the stem carries the level
   useEffect(() => {
     const bv = baseVideo.current
     const ov = ovVideo.current
+    const baseLevel = clamp(audio.base === "duck" && inWindow ? 0.25 * audio.baseGain : audio.baseGain, 0, 1)
+    const ovLevel = clamp(audio.overlayGain, 0, 1)
     if (bv) {
-      bv.muted = audio.base === "mute"
-      bv.volume = clamp(audio.base === "duck" && inWindow ? 0.25 * audio.baseGain : audio.baseGain, 0, 1)
+      bv.muted = audio.base === "mute" || !!baseStem
+      bv.volume = baseLevel
     }
     if (ov) {
-      ov.muted = audio.overlay === "mute"
-      ov.volume = clamp(audio.overlayGain, 0, 1)
+      ov.muted = audio.overlay === "mute" || !!overlayStem
+      ov.volume = ovLevel
     }
-  }, [audio, inWindow])
+    const bs = baseStemAudio.current
+    if (bs) {
+      bs.muted = audio.base === "mute"
+      bs.volume = baseLevel
+    }
+    const os = ovStemAudio.current
+    if (os) {
+      os.muted = audio.overlay === "mute"
+      os.volume = ovLevel
+    }
+    // the media mount only once the stage is measured (EditedMedia renders
+    // nothing at 0×0), so the ids and the size are deps too, or a remix
+    // starts un-muted until the panel is touched
+  }, [audio, inWindow, baseStem, overlayStem, base?.id, overlay?.id, size.w])
 
   const toggle = () => usePreview.getState().ctl?.toggle()
 
@@ -274,16 +304,19 @@ export function Stage() {
 
   const baseMedia = base ? (
     base.media === "video" ? (
-      <video
-        ref={baseVideo}
-        className="rh-stage__media"
-        src={base.proxyUrl ?? undefined}
-        playsInline
-        preload="metadata"
-        onLoadedMetadata={(e) => {
-          e.currentTarget.currentTime = s.baseIn
-        }}
-      />
+      <>
+        <video
+          ref={baseVideo}
+          className="rh-stage__media"
+          src={base.proxyUrl ?? undefined}
+          playsInline
+          preload="metadata"
+          onLoadedMetadata={(e) => {
+            e.currentTarget.currentTime = s.baseIn
+          }}
+        />
+        {baseStem?.proxyUrl && <audio key={baseStem.id} ref={baseStemAudio} src={baseStem.proxyUrl} preload="auto" />}
+      </>
     ) : (
       <img className="rh-stage__media" src={base.proxyUrl ?? base.thumbUrl ?? ""} alt="" />
     )
@@ -298,11 +331,14 @@ export function Stage() {
     )
 
   const ovMedia = overlay ? (
-    overlay.media === "audio" ? (
-      <audio ref={ovVideo as React.RefObject<HTMLAudioElement>} src={overlay.proxyUrl ?? undefined} preload="metadata" onLoadedMetadata={(e) => { e.currentTarget.currentTime = ovIn }} />
-    ) : (
-      <video ref={ovVideo as React.RefObject<HTMLVideoElement>} className="rh-stage__media rh-stage__ov" src={overlay.proxyUrl ?? undefined} playsInline preload="metadata" onLoadedMetadata={(e) => { e.currentTarget.currentTime = ovIn }} />
-    )
+    <>
+      {overlay.media === "audio" ? (
+        <audio ref={ovVideo as React.RefObject<HTMLAudioElement>} src={overlay.proxyUrl ?? undefined} preload="metadata" onLoadedMetadata={(e) => { e.currentTarget.currentTime = ovIn }} />
+      ) : (
+        <video ref={ovVideo as React.RefObject<HTMLVideoElement>} className="rh-stage__media rh-stage__ov" src={overlay.proxyUrl ?? undefined} playsInline preload="metadata" onLoadedMetadata={(e) => { e.currentTarget.currentTime = ovIn }} />
+      )}
+      {overlayStem?.proxyUrl && <audio key={overlayStem.id} ref={ovStemAudio} src={overlayStem.proxyUrl} preload="auto" onLoadedMetadata={(e) => { e.currentTarget.currentTime = ovIn }} />}
+    </>
   ) : null
   const ovIn_ = (box: { w: number; h: number }) =>
     overlay ? (

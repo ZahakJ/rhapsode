@@ -154,10 +154,20 @@ export function Monitor() {
   const audible = (t: { id: string; kind: string; muted: boolean }) => !t.muted && (!soloKinds2.has(t.kind) || trackFlags[t.id]?.solo)
   const audios = useMemo(() => {
     const out: AudioClip[] = []
-    for (const track of seq.tracks) if (track.kind === "audio" && audible(track)) out.push(...track.clips)
+    for (const track of seq.tracks) {
+      if (track.kind === "audio" && audible(track)) out.push(...track.clips)
+      // a video clip taking a stem sounds through the stem, cut exactly like the clip
+      if (track.kind === "visual" && audible(track))
+        for (const c of track.clips) {
+          if (!c.soundFrom || c.volume <= 0) continue
+          const src = sources[c.source]
+          const len = src?.media === "video" ? Math.min(c.duration, Math.max(0.1, (src.duration ?? c.duration) - c.in)) : c.duration
+          out.push({ id: `${c.id}~stem`, source: c.soundFrom, at: c.at, in: c.in, out: c.in + len, gain: c.volume, fadeIn: 0, fadeOut: 0 })
+        }
+    }
     return out
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seq, trackFlags])
+  }, [seq, sources, trackFlags])
 
   const cues = useMemo(() => {
     const out: Cue[] = []
@@ -266,7 +276,7 @@ function VisualLayer({ clip, len, src, t, size, playing, selected, onGuides }: {
     src.media === "image" ? (
       <KenBurnsImage clip={clip} src={src} t={t} len={len} />
     ) : (
-      <ClipVideo src={src} want={clip.in + (t - clip.at)} playing={playing} volume={clip.volume} />
+      <ClipVideo src={src} want={clip.in + (t - clip.at)} playing={playing} volume={clip.soundFrom ? 0 : clip.volume} />
     )
   const tr = clip.transform
   const lk = clip.look

@@ -5,15 +5,16 @@ import fs from "node:fs"
 import path from "node:path"
 import { Readable } from "node:stream"
 import { pipeline } from "node:stream/promises"
-import { createSourceUrlSchema } from "../../shared/recipe.ts"
+import { createSourceUrlSchema, STEM_KINDS, type StemKind, type StemsCreated } from "../../shared/recipe.ts"
 import type { Config } from "../config.ts"
 import type { JobQueue } from "../jobs.ts"
 import { sniff } from "../sniff.ts"
-import { newId, type Store } from "../store.ts"
+import { newId, type SourceRow, type Store } from "../store.ts"
 import { assertPublicHost, parseSourceUrl, UrlRejected } from "../sources/ssrf.ts"
+import { stemTitle, type SeparatePayload } from "../sources/stems.ts"
 import { ytMetadata } from "../sources/url.ts"
 
-export function sourcesRoutes(store: Store, config: Config, queue: JobQueue): Hono {
+export function sourcesRoutes(store: Store, config: Config, queue: JobQueue, deps: { stems?: boolean } = {}): Hono {
   const r = new Hono()
 
   r.post("/", async (c) => {
@@ -170,5 +171,43 @@ export function sourcesRoutes(store: Store, config: Config, queue: JobQueue): Ho
     return c.body(null, 204)
   })
 
+  // Split a source's sound into vocals + music. Idempotent: ready stems come
+  // back at once, a split already underway hands back its job, otherwise two
+  // pending stem rows are created and one separate job makes both.
+  r.post("/:id/stems", (c) => {
+    const parent = store.sourceById(c.req.param("id"))
+    if (!parent) return c.json({ error: "not found" }, 404)
+    if (parent.status !== "ready") return c.json({ error: "that source is still preparing" }, 409)
+    if (parent.has_audio !== 1) return c.json({ error: "that source has no sound to split" }, 422)
+    if (parent.kind === "stem") return c.json({ error: "that is already a stem" }, 422)
+    const existing = store.stemsOf(parent.id)
+    const ready = pick(existing, "ready")
+    if (ready) return c.json({ stems: ready.map((s) => store.sourceDto(s)), job: null } satisfies StemsCreated, 200)
+    const pending = pick(existing, "pending")
+    const liveJob = pending && pending[0]!.job_id ? store.jobById(pending[0]!.job_id) : null
+    if (pending && liveJob && (liveJob.status === "queued" || liveJob.status === "running"))
+      return c.json({ stems: pending.map((s) => store.sourceDto(s)), job: store.jobDto(liveJob) } satisfies StemsCreated, 202)
+    if (!deps.stems) return c.json({ error: "stem separation is not set up on this server (demucs is missing)" }, 503)
+    if ((parent.duration ?? 0) > config.stemMaxS) return c.json({ error: `separation is capped at ${Math.round(config.stemMaxS / 60)} minutes of sound` }, 422)
+    if (store.totalBytes() > config.diskCapBytes) return c.json({ error: "the disk is full — delete some renders" }, 507)
+    if (queue.pendingCount("separate") >= config.maxPendingStems) return c.json({ error: "too many splits in flight, try again shortly" }, 429)
+
+    // leftovers from a failed attempt make way for the new one
+    for (const s of existing) if (s.status !== "ready") store.deleteSource(s.id)
+    const ids = Object.fromEntries(STEM_KINDS.map((k) => [k, newId()])) as Record<StemKind, string>
+    const job = queue.enqueue("separate", { parentId: parent.id, stems: ids } satisfies SeparatePayload)
+    const rows = STEM_KINDS.map((k) =>
+      store.insertSource({ id: ids[k], kind: "stem", media: "audio", title: stemTitle(parent.title, k), ext: "flac", duration: parent.duration, jobId: job.id, parentId: parent.id, stem: k }),
+    )
+    store.touchSources([parent.id])
+    return c.json({ stems: rows.map((s) => store.sourceDto(s)), job: store.jobDto(job) } satisfies StemsCreated, 202)
+  })
+
   return r
+}
+
+/** the newest complete pair (one of each stem kind) in a given status, or null */
+function pick(rows: SourceRow[], status: SourceRow["status"]): SourceRow[] | null {
+  const out = STEM_KINDS.map((k) => rows.find((s) => s.stem === k && s.status === status))
+  return out.every(Boolean) ? (out as SourceRow[]) : null
 }

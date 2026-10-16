@@ -7,6 +7,7 @@ import { useAuth } from "../store/authStore.ts"
 import { useCompose, saveDraft, readDraft, applyDraft, clearDraft, validateRecipe } from "../store/composeStore.ts"
 import { toast } from "../components/Toasts.tsx"
 import { InviteKeyDialog } from "../components/InviteKeyDialog.tsx"
+import { StemTake } from "../components/StemTake.tsx"
 import { navigate } from "../router.ts"
 import { usePhone } from "../usePhone.ts"
 import { SourcePicker } from "./SourcePicker.tsx"
@@ -43,9 +44,9 @@ export function ComposeView() {
     if (!draft || (!draft.baseId && !draft.overlayId)) return
     const get = (id: string | null): Promise<SourceDto | null> =>
       id ? api.getSource(id).then((x) => (x.status === "ready" ? x : null)).catch(() => null) : Promise.resolve(null)
-    void Promise.all([get(draft.baseId), get(draft.overlayId)]).then(([b, o]) => {
+    void Promise.all([get(draft.baseId), get(draft.overlayId), get(draft.baseStemId), get(draft.overlayStemId)]).then(([b, o, bs, os]) => {
       if (!b && !o) return
-      applyDraft(draft, b, o)
+      applyDraft(draft, b, o, { base: bs, overlay: os })
       if (b && o) setStep("compose")
       toast("draft restored")
     })
@@ -209,7 +210,7 @@ export function ComposeView() {
       return
     }
     const seq = sequenceFromRecipe(recipeSchema.parse(v.recipe), s.base, s.overlay)
-    useStudio.getState().setSequence(seq, s.title, [s.base, s.overlay])
+    useStudio.getState().setSequence(seq, s.title, [s.base, s.overlay, ...[s.baseStem, s.overlayStem].filter((x): x is SourceDto => !!x)])
     toast("opened in the studio — tracks, music, subtitles from here")
     navigate("#/studio")
   }
@@ -449,6 +450,9 @@ function Inspector() {
             { v: "mute", l: "mute" },
           ]}
         />
+        {baseIsVideo && s.base?.hasAudio && s.audio.base !== "mute" && (
+          <StemTake source={s.base} value={s.baseStem} onChange={s.setBaseStem} label="base takes" />
+        )}
         <Seg
           block
           label="clip"
@@ -459,6 +463,16 @@ function Inspector() {
             { v: "mute", l: "mute" },
           ]}
         />
+        {s.overlay?.hasAudio && s.audio.overlay !== "mute" && (
+          <StemTake source={s.overlay} value={s.overlayStem} onChange={s.setOverlayStem} label="clip takes" />
+        )}
+        {(s.baseStem || s.overlayStem) && (
+          <p className="rh-hint">
+            {s.overlayStem?.stem === "vocals" && s.baseStem?.stem === "music"
+              ? "a mashup: the clip's voice over the base's music"
+              : "stems are split once per source, then instant — the preview plays them too"}
+          </p>
+        )}
         {!baseIsVideo && s.audio.base !== "mute" && <p className="rh-hint">a photo has no sound; base sound applies to video bases</p>}
         <Range label="base gain" value={s.audio.baseGain} min={0} max={2} step={0.05} onChange={(v) => s.patch({ audio: { ...s.audio, baseGain: v } })} fmt={(v) => `${Math.round(v * 100)}%`} />
         <Range label="clip gain" value={s.audio.overlayGain} min={0} max={2} step={0.05} onChange={(v) => s.patch({ audio: { ...s.audio, overlayGain: v } })} fmt={(v) => `${Math.round(v * 100)}%`} />

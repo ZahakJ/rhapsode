@@ -110,6 +110,62 @@ export const MIGRATIONS: string[] = [
     CREATE INDEX sources_created ON sources(created_at);
     PRAGMA foreign_keys = ON;
   `,
+  // v3: stems. A source can be 'stem' — a Demucs half (vocals / music) of a
+  // parent source — and jobs gain the 'separate' kind. Both CHECKs widen, so
+  // both tables are rebuilt the v2 way.
+  `
+    PRAGMA foreign_keys = OFF;
+    CREATE TABLE sources_v3 (
+      id           TEXT PRIMARY KEY,
+      kind         TEXT NOT NULL CHECK (kind IN ('url','upload','stem')),
+      media        TEXT NOT NULL CHECK (media IN ('video','image','audio')),
+      status       TEXT NOT NULL CHECK (status IN ('pending','ready','failed')),
+      url          TEXT,
+      title        TEXT NOT NULL DEFAULT '',
+      ext          TEXT NOT NULL DEFAULT '',
+      duration     REAL,
+      width        INTEGER,
+      height       INTEGER,
+      fps          REAL,
+      has_audio    INTEGER NOT NULL DEFAULT 0,
+      window_start REAL,
+      window_end   REAL,
+      sha256       TEXT,
+      bytes        INTEGER NOT NULL DEFAULT 0,
+      error        TEXT,
+      job_id       TEXT,
+      created_at   INTEGER NOT NULL,
+      last_used_at INTEGER NOT NULL,
+      parent_id    TEXT,
+      stem         TEXT CHECK (stem IS NULL OR stem IN ('vocals','music'))
+    );
+    INSERT INTO sources_v3 (id, kind, media, status, url, title, ext, duration, width, height, fps, has_audio, window_start, window_end, sha256, bytes, error, job_id, created_at, last_used_at)
+      SELECT id, kind, media, status, url, title, ext, duration, width, height, fps, has_audio, window_start, window_end, sha256, bytes, error, job_id, created_at, last_used_at FROM sources;
+    DROP TABLE sources;
+    ALTER TABLE sources_v3 RENAME TO sources;
+    CREATE INDEX sources_sha ON sources(sha256);
+    CREATE INDEX sources_created ON sources(created_at);
+    CREATE INDEX sources_parent ON sources(parent_id);
+
+    CREATE TABLE jobs_v3 (
+      id           TEXT PRIMARY KEY,
+      kind         TEXT NOT NULL CHECK (kind IN ('fetch','render','separate')),
+      status       TEXT NOT NULL CHECK (status IN ('queued','running','done','failed','cancelled')),
+      stage        TEXT,
+      progress     REAL,
+      error        TEXT,
+      payload_json TEXT NOT NULL,
+      result_json  TEXT,
+      created_at   INTEGER NOT NULL,
+      started_at   INTEGER,
+      finished_at  INTEGER
+    );
+    INSERT INTO jobs_v3 SELECT * FROM jobs;
+    DROP TABLE jobs;
+    ALTER TABLE jobs_v3 RENAME TO jobs;
+    CREATE INDEX jobs_status ON jobs(status, created_at);
+    PRAGMA foreign_keys = ON;
+  `,
 ]
 
 function migrate(db: DatabaseSync): void {

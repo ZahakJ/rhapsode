@@ -43,9 +43,26 @@ d("app (integration)", () => {
     baseMp4 = fs.readFileSync(`${fx}/base.mp4`)
     ovMp4 = fs.readFileSync(`${fx}/ov.mp4`)
     png = fs.readFileSync(`${fx}/img.png`)
-    const config = loadConfig({ DATA_DIR: dataDir, INVITE_KEY: KEY, RATE_LIMIT: "0", RENDER_ENCODER: "libx264", PUBLIC_ORIGIN: "https://r.test" })
+    // a stand-in demucs: same CLI surface, writes the two halves with ffmpeg and
+    // redraws a tqdm-style bar on stderr the way the real one does
+    const fakeDemucs = path.join(fx, "demucs")
+    fs.writeFileSync(
+      fakeDemucs,
+      [
+        "#!/bin/sh",
+        "out=; name=htdemucs; track=",
+        'while [ $# -gt 0 ]; do case "$1" in -o) out=$2; shift;; -n) name=$2; shift;; --filename) shift;; --two-stems=*) ;; *) track=$1;; esac; shift; done',
+        'mkdir -p "$out/$name"',
+        'printf "  0%%|          | 0/10\r 50%%|#####     | 5/10\r" >&2',
+        'ffmpeg -hide_banner -loglevel error -y -i "$track" -af "highpass=f=800" "$out/$name/vocals.wav" || exit 1',
+        'ffmpeg -hide_banner -loglevel error -y -i "$track" -af "lowpass=f=800" "$out/$name/no_vocals.wav" || exit 1',
+        'printf "100%%|##########| 10/10\n" >&2',
+      ].join("\n"),
+      { mode: 0o755 },
+    )
+    const config = loadConfig({ DATA_DIR: dataDir, INVITE_KEY: KEY, RATE_LIMIT: "0", RENDER_ENCODER: "libx264", PUBLIC_ORIGIN: "https://r.test", DEMUCS_BIN: fakeDemucs })
     db = openDb(":memory:")
-    ;({ app, queue } = createApp(config, db, { encoder: "libx264", ytdlpVersion: "test" }))
+    ;({ app, queue } = createApp(config, db, { encoder: "libx264", ytdlpVersion: "test", stems: true }))
   })
 
   afterAll(() => {
@@ -313,6 +330,69 @@ d("app (integration)", () => {
       { id: "v", kind: "visual", clips: [{ id: "c", source: img.id, at: 0, duration: 1.2 }] },
       { id: "a", kind: "audio", clips: [{ id: "m", source: snd.id, at: 0, in: 0, out: 1.2, fadeOut: 0.3 }] },
     ] } })
+    expect(seq.status, await seq.clone().text()).toBe(202)
+    const sj = await waitJob(((await seq.json()) as { job: JobDto }).job.id)
+    expect(sj.status, sj.error ?? "").toBe("done")
+  })
+
+  it("splits a source into vocals + music stems and renders with them", async () => {
+    const post = (body: unknown) => app.request("/api/renders", { method: "POST", headers: { ...H, "content-type": "application/json" }, body: JSON.stringify(body) })
+    const split = (id: string) => app.request(`/api/sources/${id}/stems`, { method: "POST", headers: H })
+    expect((await app.request(`/api/sources/${base.id}/stems`, { method: "POST" })).status).toBe(401)
+    expect((await split(img.id)).status).toBe(422)
+
+    const r1 = await split(base.id)
+    expect(r1.status, await r1.clone().text()).toBe(202)
+    const made = (await r1.json()) as { stems: SourceDto[]; job: JobDto }
+    expect(made.stems.map((s) => s.stem).sort()).toEqual(["music", "vocals"])
+    expect(made.stems.every((s) => s.status === "pending" && s.kind === "stem" && s.parentId === base.id)).toBe(true)
+    // asking again mid-flight hands back the same job, not a second one
+    const again = (await (await split(base.id)).json()) as { stems: SourceDto[]; job: JobDto }
+    expect(again.job.id).toBe(made.job.id)
+    const job = await waitJob(made.job.id)
+    expect(job.status, job.error ?? "").toBe("done")
+    expect(job.progress).toBe(1)
+    const stems = (job.result as SourceDto[]).sort((a, b) => a.stem!.localeCompare(b.stem!))
+    expect(stems.map((s) => s.stem)).toEqual(["music", "vocals"])
+    for (const s of stems) {
+      const fresh = (await (await app.request(`/api/sources/${s.id}`, { headers: H })).json()) as SourceDto
+      expect(fresh.status).toBe("ready")
+      expect(fresh.media).toBe("audio")
+      expect(fresh.hasAudio).toBe(true)
+      expect(fresh.parentId).toBe(base.id)
+      expect(fresh.title).toBe(`${s.stem} · base`)
+      expect(fresh.duration).toBeGreaterThan(1.9)
+      expect(fresh.proxyUrl).toBe(`/s/${s.id}/proxy.m4a`)
+      expect((await app.request(fresh.thumbUrl!)).status).toBe(200)
+    }
+    // ready stems are reused, never re-split; a stem cannot be split further
+    const r2 = await split(base.id)
+    expect(r2.status).toBe(200)
+    const reused = (await r2.json()) as { stems: SourceDto[]; job: null }
+    expect(reused.job).toBeNull()
+    expect(reused.stems.map((s) => s.id).sort()).toEqual(stems.map((s) => s.id).sort())
+    expect((await split(stems[0]!.id)).status).toBe(422)
+    const vocals = stems.find((s) => s.stem === "vocals")!
+    const music = stems.find((s) => s.stem === "music")!
+
+    // simple mode: the base lane takes its vocals; a stem from another parent is refused
+    const wrong = await post({ recipe: { v: 1, base: { kind: "video", source: base.id, in: 0, out: 1.5 }, overlay: { source: ov.id, in: 0, out: 1 }, audio: { overlayFrom: vocals.id } } })
+    expect(wrong.status).toBe(422)
+    expect(((await wrong.json()) as { error: string }).error).toMatch(/different source/)
+    const ok = await post({ recipe: { v: 1, base: { kind: "video", source: base.id, in: 0, out: 1.5 }, overlay: { source: ov.id, in: 0, out: 1 }, audio: { base: "keep", baseFrom: vocals.id } } })
+    expect(ok.status, await ok.clone().text()).toBe(202)
+    const { job: rj, slug } = (await ok.json()) as { job: JobDto; slug: string }
+    const rdone = await waitJob(rj.id)
+    expect(rdone.status, rdone.error ?? "").toBe("done")
+    // the stem is a source of the render: the remix bundle carries it and it survives a sweep
+    const bundle = (await (await app.request(`/api/renders/${slug}/recipe`, { headers: H })).json()) as { sources: SourceDto[] }
+    expect(bundle.sources.map((s) => s.id)).toContain(vocals.id)
+    expect((await app.request(`/api/sources/${vocals.id}`, { method: "DELETE", headers: H })).status).toBe(409)
+
+    // studio: a clip's sound from its music stem
+    const seqBad = await post({ sequence: { v: 1, tracks: [{ id: "v", kind: "visual", clips: [{ id: "c", source: ov.id, at: 0, duration: 1, soundFrom: music.id }] }] } })
+    expect(seqBad.status).toBe(422)
+    const seq = await post({ sequence: { v: 1, tracks: [{ id: "v", kind: "visual", clips: [{ id: "c", source: base.id, at: 0, duration: 1.2, in: 0.3, soundFrom: music.id }] }] } })
     expect(seq.status, await seq.clone().text()).toBe(202)
     const sj = await waitJob(((await seq.json()) as { job: JobDto }).job.id)
     expect(sj.status, sj.error ?? "").toBe("done")
