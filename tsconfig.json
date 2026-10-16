@@ -16,5 +16,5 @@
     "noEmit": true,
     "types": ["vite/client", "node"]
   },
-  "include": ["client", "server", "shared", "scripts"]
+  "include": ["client", "server", "shared", "scripts", "cut"]
 }

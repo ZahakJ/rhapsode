@@ -64,6 +64,24 @@ entered through the **guest** button in the top bar.
 
 Renders of the cut view run up to 3 minutes, studio sequences up to 10.
 
+## Cut from the command line
+
+`rhapsode cut` takes exact pieces out of a link or a file without the web app:
+frames at given times, fixed-interval strips, the first frame of each shot, clips
+and contact sheets, each run with a `manifest.json` of source, times and hashes.
+Links are fetched once, only the needed section, and cached. `rhapsode mcp` offers
+the same operations as MCP tools over stdio.
+
+```sh
+npm link
+rhapsode cut strip 'https://www.youtube.com/watch?v=VIDEO' --from 5:00 --to 5:02 --fps 15 --sheet
+rhapsode cut scenes ./match.mp4 --from 10:00 --to 11:00 --size 1280x720
+rhapsode cut clip ./match.mp4 --range 10:04-10:09
+```
+
+For personal and reference use; follow the terms of the sites you fetch from.
+Details in [docs/CUT.md](docs/CUT.md).
+
 ## How it works
 
 The browser edits a document: a two-piece recipe or a multitrack sequence, both
@@ -86,6 +104,7 @@ Sources nothing references are swept after a week; renders stay until deleted.
 - [Data model](docs/DATA-MODEL.md): recipe and sequence schemas, tables, lifetimes
 - [Rendering](docs/RENDERING.md): the ffmpeg graphs, fonts, encoders, source proxies
 - [Deployment](docs/DEPLOYMENT.md): configuration, systemd, development and tests
+- [Cut](docs/CUT.md): the `rhapsode cut` command line and MCP server
 
 ## License
 

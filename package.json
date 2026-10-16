@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "bin": {
+    "rhapsode": "cut/cli.ts"
+  },
   "description": "Clip a piece of any video, lay it over another \u2014 \u1fe5\u03b1\u03c8\u1ff3\u03b4\u03cc\u03c2, the song-stitcher",
   "scripts": {
     "dev": "vite --port 5951 --strictPort",
@@ -12,7 +15,9 @@
     "start": "node --env-file-if-exists=.env server/index.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "smoke": "node tools/screenshot.mjs"
+    "smoke": "node tools/screenshot.mjs",
+    "cut": "node cut/cli.ts cut",
+    "mcp": "node cut/cli.ts mcp"
   },
   "dependencies": {
     "@fontsource/anton": "^5.2.5",
