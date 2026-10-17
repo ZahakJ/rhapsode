@@ -41,9 +41,10 @@ int usage() {
                "  rpro new OUT.rpro FILE...              a project with the files cut end to end\n"
                "  rpro export PROJECT PRESET OUT [--in S] [--out S] [--sw-decode]\n"
                "  rpro frame PROJECT SECONDS OUT.png     render one frame\n"
+               "  rpro info PROJECT                      tracks and clips as JSON\n"
                "  rpro loudness PROJECT                  integrated loudness of the active sequence\n"
                "  rpro convert IN OUT                    project interchange (.rpro .otio .fcpxml .edl .xml)\n"
-               "  rpro bench playback [--tracks N] [--size WxH] [--fps F] [--seconds S] [--codec hevc10|h264|prores]\n"
+               "  rpro bench playback [--prepare] [--unpaced] [--tracks N] [--size WxH] [--fps F] [--seconds S] [--codec hevc10|h264|prores]\n"
                "  rpro bench export   (same options) [--preset ID]\n");
   return 2;
 }
@@ -207,6 +208,29 @@ int cmdFrame(int argc, char** argv) {
   return 0;
 }
 
+int cmdInfo(int argc, char** argv) {
+  if (argc < 3) return usage();
+  Project p;
+  if (!load(argv[2], p)) return 1;
+  const Sequence* s = p.findSequence(p.active);
+  if (!s) return 1;
+  nlohmann::json tracks = nlohmann::json::array();
+  forEachTrack(*s, [&](const Track& t, TrackRef r) {
+    nlohmann::json clips = nlohmann::json::array();
+    for (auto& c : t.clips) {
+      const Media* m = p.findMedia(c.ref);
+      clips.push_back({{"name", m ? m->name : c.name}, {"start", toSeconds(c.start)}, {"end", toSeconds(c.end())},
+                       {"in", toSeconds(c.in)}, {"speed", c.speed}, {"link", c.link}});
+    }
+    tracks.push_back({{"track", (r.kind == TrackKind::Video ? "V" : "A") + std::to_string(r.index + 1)}, {"clips", clips}});
+  });
+  std::printf("%s\n", nlohmann::json{{"sequence", s->name}, {"size", {s->width, s->height}}, {"fps", s->rate.fps()},
+                                      {"duration", toSeconds(s->duration())}, {"markers", s->markers.size()}, {"tracks", tracks}}
+                          .dump(1)
+                          .c_str());
+  return 0;
+}
+
 int cmdLoudness(int argc, char** argv) {
   if (argc < 3) return usage();
   Project p;
@@ -248,29 +272,38 @@ BenchSpec benchSpec(int argc, char** argv) {
   return b;
 }
 
-/** synthetic camera-like sources, made once with ffmpeg (NVENC when there is one) and cached */
+/** synthetic sources, made once and cached: a 10 s clip encoded on the GPU with a small
+ *  filter graph, then stream-copied end to end to the asked length (cheap in memory) */
 std::vector<std::string> benchSources(const BenchSpec& b) {
-  fs::path dir = fs::path(arg(0, nullptr, "", "")).empty() ? fs::current_path() / "build" / "bench" : fs::path();
+  fs::path dir = fs::current_path() / "build" / "bench";
   if (const char* d = std::getenv("RPRO_BENCH_DIR")) dir = d;
   fs::create_directories(dir);
   std::vector<std::string> out;
   const char* patterns[] = {"testsrc2", "smptehdbars", "rgbtestsrc", "testsrc", "pal100bars", "yuvtestsrc"};
   for (int i = 0; i < b.tracks; ++i) {
     std::string ext = b.codec == "prores" ? "mov" : "mp4";
-    fs::path f = dir / ("src" + std::to_string(i) + "-" + b.codec + "-" + std::to_string(b.w) + "x" + std::to_string(b.h) + "p" +
-                        std::to_string(b.fps) + "-" + std::to_string(b.seconds) + "s." + ext);
+    std::string stem = "src" + std::to_string(i) + "-" + b.codec + "-" + std::to_string(b.w) + "x" + std::to_string(b.h) + "p" +
+                       std::to_string(b.fps);
+    fs::path piece = dir / (stem + "-10s." + ext);
+    fs::path f = dir / (stem + "-" + std::to_string(b.seconds) + "s." + ext);
     if (!fs::exists(f)) {
-      std::string venc = b.codec == "hevc10" ? "-pix_fmt p010le -c:v hevc_nvenc -profile:v main10 -preset p4 -b:v 60M -g " + std::to_string(b.fps * 2)
-                         : b.codec == "h264" ? "-pix_fmt yuv420p -c:v h264_nvenc -preset p4 -b:v 60M -g " + std::to_string(b.fps * 2)
+      std::string venc = b.codec == "hevc10" ? "-pix_fmt p010le -c:v hevc_nvenc -profile:v main10 -preset p4 -rc cbr -b:v 60M -g " + std::to_string(b.fps * 2)
+                         : b.codec == "h264" ? "-pix_fmt yuv420p -c:v h264_nvenc -preset p4 -rc cbr -b:v 60M -g " + std::to_string(b.fps * 2)
                                              : "-pix_fmt yuv422p10le -c:v prores_ks -profile:v 2";
-      // moving noise over the pattern keeps the encoder honest about bits
-      std::string cmd = "ffmpeg -nostdin -loglevel error -y -f lavfi -i " + std::string(patterns[i % 6]) + "=s=" +
-                        std::to_string(b.w) + "x" + std::to_string(b.h) + ":r=" + std::to_string(b.fps) + ":d=" +
-                        std::to_string(b.seconds) + " -f lavfi -i sine=frequency=" + std::to_string(220 * (i + 1)) +
-                        ":duration=" + std::to_string(b.seconds) + " -vf noise=alls=12:allf=t " + venc +
-                        " -c:a aac -shortest '" + f.string() + ".part." + ext + "' && mv '" + f.string() + ".part." + ext + "' '" + f.string() + "'";
-      std::fprintf(stderr, "making %s\n", f.c_str());
-      if (std::system(cmd.c_str()) != 0) return {};
+      if (!fs::exists(piece)) {
+        std::string cmd = "flock /tmp/side-gpu.lock ffmpeg -nostdin -loglevel error -y -threads 4 -filter_threads 2 -f lavfi -i " +
+                          std::string(patterns[i % 6]) + "=s=" + std::to_string(b.w) + "x" + std::to_string(b.h) + ":r=" +
+                          std::to_string(b.fps) + ":d=10 -f lavfi -i sine=frequency=" + std::to_string(220 * (i + 1)) +
+                          ":duration=10 " + venc + " -c:a aac -shortest '" + piece.string() + ".part." + ext + "' && mv '" +
+                          piece.string() + ".part." + ext + "' '" + piece.string() + "'";
+        std::fprintf(stderr, "making %s\n", piece.c_str());
+        if (std::system(cmd.c_str()) != 0) return {};
+      }
+      int loops = (b.seconds + 9) / 10 - 1;
+      std::string cat = "ffmpeg -nostdin -loglevel error -y -stream_loop " + std::to_string(loops) + " -i '" + piece.string() +
+                        "' -c copy -t " + std::to_string(b.seconds) + " '" + f.string() + ".part." + ext + "' && mv '" +
+                        f.string() + ".part." + ext + "' '" + f.string() + "'";
+      if (std::system(cat.c_str()) != 0) return {};
     }
     out.push_back(f.string());
   }
@@ -318,6 +351,7 @@ int cmdBenchPlayback(int argc, char** argv) {
   BenchSpec b = benchSpec(argc, argv);
   auto files = benchSources(b);
   if (files.empty()) return 1;
+  if (flag(argc, argv, "--prepare")) return 0;  // sources only; measure in a second run under the GPU lock
   Project p = benchProject(b, files);
   const Sequence& s = p.sequences[0];
   gfx::Gpu gpu;
@@ -450,6 +484,7 @@ int main(int argc, char** argv) {
   if (c == "export") return cmdExport(argc, argv);
   if (c == "frame") return cmdFrame(argc, argv);
   if (c == "loudness") return cmdLoudness(argc, argv);
+  if (c == "info") return cmdInfo(argc, argv);
   if (c == "convert") return cmdConvert(argc, argv);
   if (c == "bench" && argc > 2 && std::string(argv[2]) == "playback") return cmdBenchPlayback(argc, argv);
   if (c == "bench" && argc > 2 && std::string(argv[2]) == "export") return cmdBenchExport(argc, argv);
