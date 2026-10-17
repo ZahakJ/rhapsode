@@ -11,7 +11,7 @@ html, body { width: 1640px; height: 640px; overflow: hidden; background: var(--b
 body { position: relative; font-family: Plex, sans-serif; color: var(--ink); }
 .copy { position: absolute; left: 104px; top: 0; bottom: 0; width: 660px; display: flex; flex-direction: column; justify-content: center; }
 .mark { font-family: PlexMono; font-weight: 500; font-size: 22px; letter-spacing: .2em; color: var(--acc); display: flex; align-items: center; gap: 14px; }
-.mark i { width: 13px; height: 13px; border-radius: 50%; background: var(--ice); }
+.mark img { width: 40px; height: 40px; display: block; }
 h1 { margin-top: 34px; font-size: 54px; line-height: 1.04; font-weight: 600; letter-spacing: -0.025em; }
 h1 span { color: var(--acc); }
 .rule { margin: 34px 0 24px; width: 88px; height: 2px; background: var(--acc); }
@@ -19,7 +19,7 @@ h1 span { color: var(--acc); }
 .facts b { color: var(--ink); font-weight: 600; }
 .tags { margin-top: 22px; font-family: PlexMono; font-size: 15px; letter-spacing: .12em; text-transform: uppercase; color: #5f6878; }
 .window { position: absolute; left: 790px; top: 82px; width: 768px; height: 516px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
-  background: var(--bg) url(studio.webp) no-repeat; background-size: 768px auto; background-position: 0 36px;
+  background: var(--bg) url(pro.webp) no-repeat; background-size: 768px auto; background-position: 0 36px;
   box-shadow: 0 40px 90px -20px rgba(0,0,0,.85); }
 .window::before { content: ''; position: absolute; inset: 0 0 auto; height: 36px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .dots { position: absolute; top: 13px; left: 16px; display: flex; gap: 8px; }
@@ -27,11 +27,11 @@ h1 span { color: var(--acc); }
 </style></head>
 <body>
   <div class="copy">
-    <div class="mark"><i></i>RHAPSODE</div>
+    <div class="mark"><img src="../brand/rhapsode.svg" alt="">RHAPSODE</div>
     <h1>Take a piece of one thing.<br>Lay it on <span>another.</span></h1>
     <div class="rule"></div>
-    <p class="facts">Cut seconds from a link or an upload, lay them over a photo, a clip or a <b>multitrack sequence</b>, and render with <b>ffmpeg</b>.</p>
-    <p class="tags">Self-hosted · Node · React · ffmpeg · yt-dlp</p>
+    <p class="facts">Cut seconds from a link in the <b>browser</b>, or edit the whole film in a <b>native editor</b>: 4K60 multitrack, colour, sound, local transcription.</p>
+    <p class="tags">Self-hosted · ffmpeg · C++ · Vulkan · NVENC</p>
   </div>
   <div class="window"><div class="dots"><i></i><i></i><i></i></div></div>
 </body></html>

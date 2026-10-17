@@ -1,0 +1,37 @@
+<!doctype html>
+<!-- Source of docs/assets/og.png (1200x630), rendered by tools/og.mjs. Needs `npm ci` for the fonts. -->
+<html><head><meta charset="utf-8">
+<style>
+@font-face { font-family: Plex; src: url(../../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-400-normal.woff2) format('woff2'); font-weight: 400; }
+@font-face { font-family: Plex; src: url(../../node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-600-normal.woff2) format('woff2'); font-weight: 600; }
+@font-face { font-family: PlexMono; src: url(../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2) format('woff2'); font-weight: 500; }
+:root { --bg: #0b0d12; --panel: #12151c; --line: #232833; --ink: #e8ebf0; --muted: #8b93a3; --acc: #ff9f43; --ice: #7dd3fc; }
+* { box-sizing: border-box; margin: 0; }
+html, body { width: 1200px; height: 630px; overflow: hidden; background: var(--bg); }
+body { position: relative; font-family: Plex, sans-serif; color: var(--ink); }
+.copy { position: absolute; left: 64px; top: 0; bottom: 0; width: 520px; display: flex; flex-direction: column; justify-content: center; }
+.mark { font-family: PlexMono; font-weight: 500; font-size: 22px; letter-spacing: .2em; color: var(--acc); display: flex; align-items: center; gap: 14px; }
+.mark img { width: 40px; height: 40px; display: block; }
+h1 { margin-top: 30px; font-size: 46px; line-height: 1.04; font-weight: 600; letter-spacing: -0.025em; }
+h1 span { color: var(--acc); }
+.rule { margin: 34px 0 24px; width: 88px; height: 2px; background: var(--acc); }
+.facts { color: var(--muted); font-size: 20px; line-height: 1.5; max-width: 480px; }
+.facts b { color: var(--ink); font-weight: 600; }
+.tags { margin-top: 22px; font-family: PlexMono; font-size: 15px; letter-spacing: .12em; text-transform: uppercase; color: #5f6878; }
+.window { position: absolute; left: 620px; top: 120px; width: 760px; height: 470px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  background: var(--bg) url(pro.webp) no-repeat; background-size: 760px auto; background-position: 0 36px;
+  box-shadow: 0 40px 90px -20px rgba(0,0,0,.85); }
+.window::before { content: ''; position: absolute; inset: 0 0 auto; height: 36px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.dots { position: absolute; top: 13px; left: 16px; display: flex; gap: 8px; }
+.dots i { width: 10px; height: 10px; border-radius: 50%; background: #2a303c; }
+</style></head>
+<body>
+  <div class="copy">
+    <div class="mark"><img src="../brand/rhapsode.svg" alt="">RHAPSODE</div>
+    <h1>Take a piece of one thing.<br>Lay it on <span>another.</span></h1>
+    <div class="rule"></div>
+    <p class="facts">Cut seconds from a link in the <b>browser</b>, or edit the whole film in a <b>native editor</b>: 4K60 multitrack, colour, sound, local transcription.</p>
+    <p class="tags">Self-hosted · ffmpeg · C++ · Vulkan · NVENC</p>
+  </div>
+  <div class="window"><div class="dots"><i></i><i></i><i></i></div></div>
+</body></html>

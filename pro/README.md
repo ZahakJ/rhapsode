@@ -4,7 +4,7 @@ The desktop editor beside Rhapsode's quick mode: a native non-linear editor for 
 colour- and sound-heavy work. C++20 on FFmpeg 8, SDL3 GPU (Vulkan) and Dear ImGui. Everything runs on
 this machine, the speech and picture models included; nothing needs an account or the network.
 
-<p align="center"><img src="../docs/assets/pro-editor.png" alt="Rhapsode Pro" width="900"></p>
+<p align="center"><img src="../docs/media/pro.webp" alt="Rhapsode Pro playing a graded, scene-cut sequence with a picture-in-picture and English and French subtitles" width="900"></p>
 
 ## What it does
 
