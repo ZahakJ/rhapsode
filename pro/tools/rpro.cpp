@@ -394,7 +394,9 @@ std::vector<std::string> benchSources(const BenchSpec& b) {
                          : b.codec == "h264" ? "-pix_fmt yuv420p -c:v h264_nvenc -preset p4 -rc cbr -b:v 60M -g " + std::to_string(b.fps * 2)
                                              : "-pix_fmt yuv422p10le -c:v prores_ks -profile:v 2";
       if (!fs::exists(piece)) {
-        std::string cmd = "flock /tmp/side-gpu.lock ffmpeg -nostdin -loglevel error -y -threads 4 -filter_threads 2 -f lavfi -i " +
+        // the encode takes the machine's GPU lock, unless the caller already holds it (bench.sh does)
+        std::string lock = std::getenv("RPRO_HOLDS_GPU_LOCK") ? "" : "flock /tmp/side-gpu.lock ";
+        std::string cmd = lock + "ffmpeg -nostdin -loglevel error -y -threads 4 -filter_threads 2 -f lavfi -i " +
                           std::string(patterns[i % 6]) + "=s=" + std::to_string(b.w) + "x" + std::to_string(b.h) + ":r=" +
                           std::to_string(b.fps) + ":d=10 -f lavfi -i sine=frequency=" + std::to_string(220 * (i + 1)) +
                           ":duration=10 " + venc + " -c:a aac -shortest '" + piece.string() + ".part." + ext + "' && mv '" +
