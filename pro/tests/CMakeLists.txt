@@ -18,3 +18,6 @@ if(RHAP_UNSHARE)
   add_test(NAME ai_offline COMMAND ${RHAP_UNSHARE} -rn env RHAP_TEST_REMBG=1 RHAP_TEST_DEMUCS=1 $<TARGET_FILE:rhap_tests>
            -tc=transcription*,noise*,voice*,background*,silence*,scene*,auto-reframe*)
 endif()
+if(RHAP_APP)
+  add_test(NAME queue_resume COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/ui/queue_resume.sh ${CMAKE_BINARY_DIR}/bin ${CMAKE_BINARY_DIR}/test-tmp/queue)
+endif()

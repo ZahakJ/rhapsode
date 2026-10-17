@@ -1,6 +1,7 @@
 #include "jobs.h"
 
 #include <fcntl.h>
+#include <sys/prctl.h>
 #include <signal.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -8,6 +9,8 @@
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
+#include <nlohmann/json.hpp>
 #include <regex>
 
 namespace rhap::app {
@@ -23,7 +26,8 @@ std::string rproPath() {
   return "rpro";
 }
 
-JobQueue::JobQueue() {
+JobQueue::JobQueue(std::string statePath) : statePath_(std::move(statePath)) {
+  restore();
   exportThread_ = std::thread([this] { run(Job::Kind::Export); });
   proxyThread_ = std::thread([this] { run(Job::Kind::Proxy); });
   taskThread_ = std::thread([this] { run(Job::Kind::Task); });
@@ -33,6 +37,8 @@ JobQueue::~JobQueue() {
   stop_ = true;
   {
     std::lock_guard l(mu_);
+    // closing the editor mid-export is not a cancel: the export comes back next time
+    statePath_.clear();
     for (auto& j : jobs_)
       if (j->state == Job::State::Running && j->pid > 0) kill(j->pid, SIGTERM);
   }
@@ -44,6 +50,44 @@ JobQueue::~JobQueue() {
 void JobQueue::add(Job j) {
   std::lock_guard l(mu_);
   jobs_.push_back(std::make_shared<Job>(std::move(j)));
+  persist();
+}
+
+void JobQueue::persist() {
+  if (statePath_.empty()) return;
+  nlohmann::json a = nlohmann::json::array();
+  for (auto& j : jobs_) {
+    if (j->kind != Job::Kind::Export) continue;  // proxies and tasks are cheap to ask for again
+    a.push_back({{"title", j->title}, {"output", j->output}, {"argv", j->argv}, {"state", int(j->state)}, {"error", j->error}});
+  }
+  std::string tmp = statePath_ + ".tmp";
+  {
+    std::ofstream f(tmp, std::ios::trunc);
+    f << a.dump(1);
+  }
+  std::filesystem::rename(tmp, statePath_);
+}
+
+void JobQueue::restore() {
+  if (statePath_.empty()) return;
+  std::ifstream f(statePath_);
+  if (!f) return;
+  try {
+    for (auto& e : nlohmann::json::parse(f)) {
+      auto j = std::make_shared<Job>();
+      j->kind = Job::Kind::Export;
+      j->title = e.value("title", "");
+      j->output = e.value("output", "");
+      j->argv = e.value("argv", std::vector<std::string>{});
+      j->error = e.value("error", "");
+      auto st = Job::State(e.value("state", 0));
+      // an export that was waiting or running when the editor died starts again (smart render reuses its finished stretches)
+      j->state = st == Job::State::Running ? Job::State::Queued : st;
+      if (j->state == Job::State::Queued) j->title += " (resumed)";
+      jobs_.push_back(j);
+    }
+  } catch (...) {
+  }
 }
 
 void JobQueue::cancel(size_t i) {
@@ -81,6 +125,7 @@ std::vector<std::function<void()>> JobQueue::takeApplies() {
 void JobQueue::clearFinished() {
   std::lock_guard l(mu_);
   std::erase_if(jobs_, [](auto& j) { return j->state != Job::State::Queued && j->state != Job::State::Running; });
+  persist();
 }
 
 void JobQueue::run(Job::Kind lane) {
@@ -94,6 +139,7 @@ void JobQueue::run(Job::Kind lane) {
         if (j->kind == lane && j->state == Job::State::Queued) {
           job = j;
           job->state = Job::State::Running;
+          persist();
           break;
         }
     }
@@ -120,6 +166,7 @@ void JobQueue::run(Job::Kind lane) {
     }
     pid_t pid = fork();
     if (pid == 0) {
+      prctl(PR_SET_PDEATHSIG, SIGKILL);  // an export never outlives the editor; the queue brings it back
       dup2(pipefd[1], 2);
       dup2(pipefd[1], 1);
       close(pipefd[0]);
@@ -160,7 +207,10 @@ void JobQueue::run(Job::Kind lane) {
     int status = 0;
     waitpid(pid, &status, 0);
     std::lock_guard l(mu_);
-    if (job->state == Job::State::Cancelled) continue;
+    if (job->state == Job::State::Cancelled) {
+      persist();
+      continue;
+    }
     if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
       job->state = Job::State::Done;
       job->progress = 1;
@@ -171,6 +221,7 @@ void JobQueue::run(Job::Kind lane) {
                                                        : "failed")
                                 : last;
     }
+    persist();
   }
 }
 

@@ -31,7 +31,8 @@ struct Job {
 
 class JobQueue {
  public:
-  JobQueue();
+  /** statePath: where queued exports are remembered, so a crash or kill never loses the queue ("" = nowhere) */
+  explicit JobQueue(std::string statePath = "");
   ~JobQueue();
   void add(Job j);
   void cancel(size_t index);
@@ -45,6 +46,9 @@ class JobQueue {
 
  private:
   void run(Job::Kind lane);
+  void persist();  // under mu_
+  void restore();
+  std::string statePath_;
   std::mutex mu_;
   std::deque<std::shared_ptr<Job>> jobs_;
   std::vector<std::pair<std::string, std::string>> proxies_;

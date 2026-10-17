@@ -26,6 +26,15 @@ namespace fs = std::filesystem;
 
 namespace {
 
+/** ~/.local/share/rhapsode-pro: the queue and the projects exports render from (not /tmp: that is RAM and goes at boot) */
+std::string stateDir() {
+  const char* home = std::getenv("HOME");
+  std::filesystem::path d = std::filesystem::path(home ? home : ".") / ".local" / "share" / "rhapsode-pro";
+  std::error_code ec;
+  std::filesystem::create_directories(d / "jobs", ec);
+  return d.string();
+}
+
 const ImU32 kAccent = IM_COL32(255, 122, 89, 255);
 const ImU32 kAccentDim = IM_COL32(255, 122, 89, 90);
 
@@ -53,7 +62,7 @@ int modsOf(SDL_Keymod m) {
 }  // namespace
 
 App::App(SDL_Window* w, gfx::Gpu& gpu)
-    : window_(w), gpu_(gpu), frames_(true, 8), renderer_(gpu, frames_), player_(s_) {
+    : window_(w), gpu_(gpu), frames_(true, 8), renderer_(gpu, frames_), player_(s_), jobs_(stateDir() + "/queue.json") {
   loadWebSettings();
   auto use = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
   scopeSrc_ = gpu_.make(480, 270, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, use);
@@ -1253,9 +1262,7 @@ void App::mixerPanel() {
 
 void App::queueExport(const std::string& presetId, const std::string& out, bool marks) {
   // the job gets its own copy of the project: editing on never changes a running export
-  fs::path dir = fs::temp_directory_path() / "rhapsode-pro-jobs";
-  std::error_code ec;
-  fs::create_directories(dir, ec);
+  fs::path dir = fs::path(stateDir()) / "jobs";
   std::string snap = (dir / ("job-" + std::to_string(SDL_GetTicksNS()) + ".rpro")).string();
   if (std::string e = saveProject(s_.project, snap, {.backups = 0}); !e.empty()) {
     s_.status = e;
