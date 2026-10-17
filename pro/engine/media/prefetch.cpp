@@ -2,12 +2,26 @@
 
 #include <chrono>
 
+extern "C" {
+#include <libavutil/frame.h>
+}
+
 namespace rhap {
+
+namespace {
+size_t frameBytes(const VideoFrame& f) {
+  size_t n = 0;
+  if (f.av)
+    for (int i = 0; i < 4 && f.av->buf[i]; ++i) n += f.av->buf[i]->size;
+  return n;
+}
+}  // namespace
 
 struct PrefetchPool::Worker {
   std::string path;
   bool hw = true, isStill = false;
   int depth = 8;
+  size_t frameSize = 0;  // learnt from the first frame
   std::thread th;
   std::mutex mu;
   std::condition_variable cv;
@@ -50,6 +64,7 @@ struct PrefetchPool::Worker {
         if (seekGen != gen) continue;  // overtaken by a newer seek
         if (seek) doneGen = gen;
         if (copy) {
+          if (!frameSize) frameSize = frameBytes(*copy);
           if (ring.empty() || copy->pts > ring.back()->pts) ring.push_back(std::move(copy));
           // keep only what is near the playhead: one frame behind it
           while (ring.size() > 1 && ring[1]->pts <= want) ring.pop_front();
@@ -62,7 +77,29 @@ struct PrefetchPool::Worker {
   }
 };
 
-PrefetchPool::PrefetchPool(bool hw, int depth, size_t maxWorkers) : hw_(hw), depth_(depth), max_(maxWorkers) {}
+PrefetchPool::PrefetchPool(bool hw, int depth, size_t maxWorkers, size_t budget)
+    : hw_(hw), depth_(depth), max_(maxWorkers), budget_(budget) {}
+
+void PrefetchPool::rebalance() {
+  // the budget, split evenly over the clips that are playing, sets how far each may run ahead
+  size_t active = std::max<size_t>(1, workers_.size());
+  for (auto& [k, w] : workers_) {
+    std::lock_guard l(w->mu);
+    if (w->isStill || !w->frameSize) continue;
+    size_t fit = budget_ / (active * w->frameSize);
+    w->depth = int(std::clamp<size_t>(fit, 2, size_t(depth_)));
+    while (int(w->ring.size()) > w->depth + 1 && w->ring.size() > 2) w->ring.pop_back();
+  }
+}
+
+size_t PrefetchPool::heldBytes() const {
+  size_t n = 0;
+  for (auto& [k, w] : workers_) {
+    std::lock_guard l(w->mu);
+    for (auto& f : w->ring) n += frameBytes(*f);
+  }
+  return n;
+}
 
 PrefetchPool::~PrefetchPool() {
   for (auto& [k, w] : workers_) {
@@ -106,6 +143,11 @@ PrefetchPool::Stats PrefetchPool::stats() const {
 const VideoFrame* PrefetchPool::video(const Media& m, const std::string& slot, Tick t) {
   const std::string& path = proxies_ && !m.proxy.empty() ? m.proxy : m.path;
   std::string key = slot + "|" + path;
+  // every few hundred frames: retire clips nobody asked for since last time, and re-split the budget
+  if (++calls_ % 240 == 0) {
+    sweep();  // a clip asked for since the last sweep stays; the rest stop and free their frames
+    rebalance();
+  }
   auto& wp = workers_[key];
   if (!wp) {
     if (workers_.size() > max_) sweep();
@@ -118,6 +160,7 @@ const VideoFrame* PrefetchPool::video(const Media& m, const std::string& slot, T
     wp->seekTo = m.kind == MediaKind::Image ? 0 : t;
     Worker* raw = wp.get();
     wp->th = std::thread([raw] { raw->run(); });
+    rebalance();
   }
   Worker& w = *wp;
   if (w.isStill) t = 0;
