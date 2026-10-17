@@ -13,6 +13,10 @@ export RPRO_HOLDS_GPU_LOCK=1
 cd "$PRO"
 info() { echo "== $*" >&2; }
 { nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader; lscpu | grep "Model name"; uname -r; } > "$OUT/machine.txt"
+# what else is on the GPU, at the start and the end: a number measured beside another job says so
+gpustate() { echo "== $1 $(date -Is)"; nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv,noheader; nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader; }
+gpustate start > "$OUT/gpu-state.txt"
+trap 'gpustate end >> "$OUT/gpu-state.txt"' EXIT
 
 info "sources"
 "$BIN/rpro" bench playback --prepare
