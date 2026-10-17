@@ -8,7 +8,8 @@ add_library(rhap STATIC
   audio/dsp.cpp audio/mixer.cpp
   render/export.cpp
   interchange/common.cpp interchange/otio.cpp interchange/fcpxml.cpp interchange/edl.cpp interchange/xmeml.cpp
-  interchange/web.cpp interchange/interchange.cpp)
+  interchange/web.cpp interchange/interchange.cpp
+  session/session.cpp scopes/scopes.cpp)
 target_include_directories(rhap PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/..)
 pkg_check_modules(FT REQUIRED IMPORTED_TARGET freetype2 harfbuzz)
 target_link_libraries(rhap PUBLIC nlohmann_json::nlohmann_json pugixml::pugixml PkgConfig::FFMPEG PkgConfig::FT

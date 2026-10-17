@@ -22,10 +22,10 @@ pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libavut
 
 add_subdirectory(third_party)
 add_subdirectory(engine)
+add_subdirectory(tools)
 if(RHAP_APP)
   add_subdirectory(app)
 endif()
-add_subdirectory(tools)
 if(RHAP_TESTS)
   enable_testing()
   add_subdirectory(tests)

@@ -1,0 +1,7 @@
+5 move 300 740
+10 down 300 740
+12 move 330 740
+14 move 360 740
+16 up 360 740
+20 key M
+24 save @OUT@
