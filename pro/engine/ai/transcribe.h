@@ -66,6 +66,25 @@ int addCaptions(Project& p, const std::string& seqId, const std::string& clipId,
 int deleteWords(Project& p, const std::string& seqId, const std::string& clipId, const std::vector<size_t>& words,
                 Tick keep = kFlicks / 20, std::string* err = nullptr);
 
+/** a word picked in a track-wide transcript: which clip plays it, and its index in the media's transcript */
+struct WordPick {
+  std::string clip;
+  size_t index;
+};
+
+/**
+ * Text editing across a whole track (the transcript as one document): every
+ * clip's picked words are cut, later clips first so earlier picks keep their place.
+ */
+int deleteWordsOnTrack(Project& p, const std::string& seqId, const std::vector<WordPick>& picks, Tick keep = kFlicks / 20,
+                       std::string* err = nullptr);
+
+/** every filler word on the clips of a track */
+std::vector<WordPick> fillerWordsOnTrack(const Project& p, const Sequence& s, TrackRef track);
+
+/** captions for every transcribed clip of a track, on the sequence's one Captions track */
+int addCaptionsForTrack(Project& p, const std::string& seqId, TrackRef track, const CaptionOptions& o = {});
+
 /** words that are hesitation, not content ("um", "uh", "erm", "hmm", …), by transcript index, for a clip */
 std::vector<size_t> fillerWords(const Project& p, const Sequence& s, const Clip& c);
 

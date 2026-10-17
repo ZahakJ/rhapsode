@@ -1703,41 +1703,93 @@ void App::transcriptPanel() {
   ImGui::Begin("Transcript");
   transcriptFocused_ = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
   Sequence* s = s_.seq();
-  const Clip* c = s && !s_.selection.empty() ? clipById(*s, *s_.selection.begin()) : nullptr;
-  if (!c || c->kind != ClipKind::Media) {
-    ImGui::TextDisabled("Select a clip with speech. Clip ▸ Transcribe makes its words; delete words here to cut them.");
+  if (!s) {
     ImGui::End();
     return;
   }
-  auto words = ai::wordsOnTimeline(s_.project, *s, *c);
+  // the document: every transcribed clip of one track, in timeline order (the selected clip's track, else the first
+  // track that has any)
+  TrackRef track{TrackKind::Video, -1};
+  if (!s_.selection.empty())
+    if (ClipLoc l = findClip(*s, *s_.selection.begin())) track = l.track;
+  struct Placed {
+    std::string clip;
+    ai::PlacedWord w;
+  };
+  std::vector<Placed> words;
+  auto gather = [&](TrackRef r) {
+    words.clear();
+    if (const Track* t = trackOf(*s, r))
+      for (auto& c : t->clips)
+        for (auto& w : ai::wordsOnTimeline(s_.project, *s, c)) words.push_back({c.id, w});
+  };
+  if (track.index >= 0) gather(track);
+  if (words.empty())
+    forEachTrack(*s, [&](const Track&, TrackRef r) {
+      if (words.empty() && r.kind == TrackKind::Video) gather(r), track = r;
+    });
   if (words.empty()) {
-    ImGui::TextDisabled(s_.project.transcriptOf(c->ref) ? "No words inside this clip." : "No transcript yet: Clip ▸ Transcribe.");
+    ImGui::TextDisabled("Select a clip with speech and choose Clip ▸ Transcribe. Then edit the film here: delete words to cut them.");
     ImGui::End();
     return;
   }
-  if (ImGui::Button("Delete selected words") || (ImGui::IsWindowFocused() && !pickedWords_.empty() &&
+  auto picked = [&](const Placed& p) {
+    return std::any_of(pickedWords_.begin(), pickedWords_.end(), [&](const ai::WordPick& k) { return k.clip == p.clip && k.index == p.w.index; });
+  };
+  std::string seqId = s->id;
+  if (ImGui::Button("Delete selected words") || (transcriptFocused_ && !pickedWords_.empty() &&
                                                 (ImGui::IsKeyPressed(ImGuiKey_Delete) || ImGui::IsKeyPressed(ImGuiKey_Backspace)))) {
-    std::string id = c->id, seq = s->id, err;
-    auto picked = pickedWords_;
+    auto picks = pickedWords_;
+    std::string err;
     s_.apply("delete words", [&](Editor&) {
-      int n = ai::deleteWords(s_.project, seq, id, picked, kFlicks / 20, &err);
+      int n = ai::deleteWordsOnTrack(s_.project, seqId, picks, kFlicks / 20, &err);
       return n > 0 ? Err{} : Err{err.empty() ? "nothing to cut" : err};
     });
     pickedWords_.clear();
   }
   ImGui::SameLine();
   if (ImGui::Button("Remove filler words")) {
-    auto f = ai::fillerWords(s_.project, *s, *c);
-    std::string id = c->id, seq = s->id, err;
+    auto f = ai::fillerWordsOnTrack(s_.project, *s, track);
+    std::string err;
     s_.apply("remove filler words", [&](Editor&) {
-      int n = f.empty() ? 0 : ai::deleteWords(s_.project, seq, id, f, kFlicks / 20, &err);
+      int n = f.empty() ? 0 : ai::deleteWordsOnTrack(s_.project, seqId, f, kFlicks / 20, &err);
       return n > 0 ? Err{} : Err{err.empty() ? "no filler words" : err};
     });
   }
   ImGui::SameLine();
+  if (ImGui::Button("Remove pauses")) {
+    // silences per media, found once, then cut clip by clip from the end of the track
+    std::map<std::string, std::string> paths;  // media id -> path
+    if (const Track* t = trackOf(*s, track))
+      for (auto& c : t->clips)
+        if (const Media* m = c.kind == ClipKind::Media ? s_.project.findMedia(c.ref) : nullptr) paths[m->id] = m->path;
+    auto found = std::make_shared<std::map<std::string, std::vector<ai::Range>>>();
+    TrackRef tr = track;
+    task("find pauses", [paths, found] {
+      for (auto& [id, path] : paths) (*found)[id] = ai::detectSilence(path);
+      return std::string();
+    }, [this, found, seqId, tr] {
+      int n = 0;
+      s_.apply("remove pauses", [&](Editor&) -> Err {
+        const Sequence* q = s_.project.findSequence(seqId);
+        std::vector<std::pair<std::string, std::string>> clips;  // clip id, media id
+        if (const Track* t = q ? trackOf(*q, tr) : nullptr)
+          for (auto& c : t->clips) clips.push_back({c.id, c.ref});
+        for (auto it = clips.rbegin(); it != clips.rend(); ++it)
+          if (found->count(it->second)) n += ai::removeSilence(s_.project, seqId, it->first, (*found)[it->second], tr.kind == TrackKind::Video);
+        return n > 0 ? Err{} : Err{"no pauses found"};
+      });
+      if (n) s_.status = std::to_string(n) + " pauses removed";
+    });
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Captions")) {
+    s_.apply("captions", [&](Editor&) { return ai::addCaptionsForTrack(s_.project, seqId, track) > 0 ? Err{} : Err{"no words"}; });
+  }
+  ImGui::SameLine();
   if (ImGui::Button("Export SRT…")) {
     std::vector<Word> placed;
-    for (auto& w : words) placed.push_back(Word{w.a, w.b, w.text, 1});
+    for (auto& p : words) placed.push_back(Word{p.w.a, p.w.b, p.w.text, 1});
     std::string out = (s_.path.empty() ? fs::temp_directory_path() / "captions" : fs::path(s_.path).replace_extension("")).string() + ".srt";
     s_.status = writeAtomic(out, ai::toSrt(ai::captions(placed))).empty() ? "wrote " + out : "could not write " + out;
   }
@@ -1745,24 +1797,23 @@ void App::transcriptPanel() {
   ImGui::BeginChild("words");
   float width = ImGui::GetContentRegionAvail().x, x = 0;
   for (size_t i = 0; i < words.size(); ++i) {
-    const auto& w = words[i];
-    std::string t = w.text.empty() || w.text[0] != ' ' ? w.text : w.text.substr(1);
+    const auto& p = words[i];
+    std::string t = p.w.text.empty() || p.w.text[0] != ' ' ? p.w.text : p.w.text.substr(1);
     ImVec2 sz = ImGui::CalcTextSize(t.c_str());
     if (x > 0 && x + sz.x + 8 < width) ImGui::SameLine(0, 4);
     else x = 0;
-    bool now = s_.playhead >= w.a && s_.playhead < w.b;
-    bool picked = std::find(pickedWords_.begin(), pickedWords_.end(), w.index) != pickedWords_.end();
+    bool now = s_.playhead >= p.w.a && s_.playhead < p.w.b;
     if (now) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.48f, 0.35f, 1));
     ImGui::PushID(int(i));
-    if (ImGui::Selectable(t.c_str(), picked, 0, sz)) {
+    if (ImGui::Selectable(t.c_str(), picked(p), 0, sz)) {
       if (ImGui::GetIO().KeyShift && !pickedWords_.empty()) {
         size_t lo = std::min(wordAnchor_, i), hi = std::max(wordAnchor_, i);
         pickedWords_.clear();
-        for (size_t k = lo; k <= hi; ++k) pickedWords_.push_back(words[k].index);
+        for (size_t k = lo; k <= hi && k < words.size(); ++k) pickedWords_.push_back({words[k].clip, words[k].w.index});
       } else {
-        pickedWords_ = {w.index};
+        pickedWords_ = {{p.clip, p.w.index}};
         wordAnchor_ = i;
-        s_.seek(w.a);
+        s_.seek(p.w.a);
         player_.seeked();
       }
     }

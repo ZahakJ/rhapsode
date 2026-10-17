@@ -385,6 +385,46 @@ int deleteWords(Project& p, const std::string& seqId, const std::string& clipId,
   return n;
 }
 
+int deleteWordsOnTrack(Project& p, const std::string& seqId, const std::vector<WordPick>& picks, Tick keep, std::string* err) {
+  const Sequence* s = p.findSequence(seqId);
+  if (!s) return 0;
+  // group by clip, in timeline order
+  std::vector<std::pair<Tick, std::string>> order;
+  for (auto& pk : picks)
+    if (const Clip* c = clipById(*s, pk.clip))
+      if (std::find_if(order.begin(), order.end(), [&](auto& o) { return o.second == pk.clip; }) == order.end())
+        order.push_back({c->start, pk.clip});
+  std::sort(order.begin(), order.end());
+  int n = 0;
+  for (auto it = order.rbegin(); it != order.rend(); ++it) {
+    std::vector<size_t> words;
+    for (auto& pk : picks)
+      if (pk.clip == it->second) words.push_back(pk.index);
+    n += deleteWords(p, seqId, it->second, words, keep, err);
+  }
+  return n;
+}
+
+std::vector<WordPick> fillerWordsOnTrack(const Project& p, const Sequence& s, TrackRef track) {
+  std::vector<WordPick> out;
+  const Track* t = trackOf(s, track);
+  if (!t) return out;
+  for (auto& c : t->clips)
+    for (size_t i : fillerWords(p, s, c)) out.push_back({c.id, i});
+  return out;
+}
+
+int addCaptionsForTrack(Project& p, const std::string& seqId, TrackRef track, const CaptionOptions& o) {
+  const Sequence* s = p.findSequence(seqId);
+  if (!s) return 0;
+  std::vector<std::string> ids;
+  if (const Track* t = trackOf(*s, track))
+    for (auto& c : t->clips) ids.push_back(c.id);
+  int n = 0;
+  for (auto& id : ids) n += addCaptions(p, seqId, id, o);
+  return n;
+}
+
 std::vector<size_t> fillerWords(const Project& p, const Sequence& s, const Clip& c) {
   static const char* fillers[] = {"um", "umm", "uh", "uhh", "erm", "er", "ah", "hmm", "mm", "mhm", "eh"};
   std::vector<size_t> out;
