@@ -10,7 +10,7 @@ for i in 0 1; do
 done
 "$BIN/rpro" new start.rpro clip0.mp4 clip1.mp4 >/dev/null
 sed "s#@OUT@#$WORK/after.rpro#" "$SRC/drag-move.script" > drag.script
-"$BIN/rhapsode-pro" start.rpro --script drag.script --screenshot "$WORK/after.png" --frames 30 >/dev/null 2>&1
+"$BIN/rhapsode-pro" start.rpro --script drag.script --screenshot "$WORK/after.png" --frames 45 >/dev/null 2>&1
 "$BIN/rpro" info after.rpro > after.json
 python3 - "$WORK/after.json" <<'PY'
 import json, sys
@@ -22,4 +22,12 @@ assert abs(a1[0]["start"] - 1.0) < 1e-6, a1          # the linked sound moved wi
 assert abs(v1[1]["start"] - 9.0) < 1e-6 and abs(v1[1]["in"] - 1.0) < 1e-6, v1  # overwrite cut the next clip's head
 assert j["markers"] == 1, j
 print("ui smoke: drag-move and marker ok")
+PY
+python3 - "$WORK/after.rpro" <<'PY'
+import json, sys
+p = json.load(open(sys.argv[1]))["project"]
+x = p["sequences"][0]["video"][0]["clips"][0]["xf"]["x"]
+x = x if isinstance(x, (int, float)) else x["v"]
+assert 100 < x < 200, x  # 60 viewer pixels → about 140 sequence pixels at this window size
+print("ui smoke: viewer gizmo moved the picture by", round(x), "px")
 PY

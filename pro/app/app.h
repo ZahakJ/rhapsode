@@ -48,6 +48,7 @@ class App {
  private:
   void menu();
   void viewer(SDL_GPUCommandBuffer* cmd);
+  void gizmo(ImVec2 origin, float w, float h, bool hovered);
   void timeline();
   void bin();
   void inspector();
@@ -103,7 +104,10 @@ class App {
   std::string selectedMedia_;
   std::vector<size_t> pickedWords_;  // transcript selection (word indices)
   size_t wordAnchor_ = 0;
-  bool transcriptFocused_ = false;  // Delete there cuts words, not clips
+  bool transcriptFocused_ = false;
+  bool gizmoDrag_ = false;
+  ImVec2 gizmoGrab_{};
+  double gizmoX_ = 0, gizmoY_ = 0;  // Delete there cuts words, not clips
   std::string exportPreset_ = "youtube-1080p", exportPath_;
   bool exportMarks_ = false;
   // Rhapsode web (quick mode): where it lives and the invite key
