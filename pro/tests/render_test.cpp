@@ -21,14 +21,15 @@ using fx::sec;
 namespace {
 
 gfx::Gpu* gpu() {
-  static gfx::Gpu g;
+  // never destroyed: tearing a Vulkan device down from a static destructor races the driver's own atexit
+  static gfx::Gpu* g = new gfx::Gpu;
   static bool tried = false;
   if (!tried) {
     tried = true;
-    std::string e = g.init(nullptr);
+    std::string e = g->init(nullptr);
     if (!e.empty()) MESSAGE("no GPU: " << e);
   }
-  return g.ok() ? &g : nullptr;
+  return g->ok() ? g : nullptr;
 }
 
 Project seqProject(int w, int h) {
