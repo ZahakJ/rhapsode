@@ -378,4 +378,17 @@ int deleteWords(Project& p, const std::string& seqId, const std::string& clipId,
   return n;
 }
 
+std::vector<size_t> fillerWords(const Project& p, const Sequence& s, const Clip& c) {
+  static const char* fillers[] = {"um", "umm", "uh", "uhh", "erm", "er", "ah", "hmm", "mm", "mhm", "eh"};
+  std::vector<size_t> out;
+  for (auto& w : wordsOnTimeline(p, s, c)) {
+    std::string t;
+    for (char ch : w.text)
+      if (std::isalpha(static_cast<unsigned char>(ch))) t += char(std::tolower(static_cast<unsigned char>(ch)));
+    for (const char* f : fillers)
+      if (t == f) out.push_back(w.index);
+  }
+  return out;
+}
+
 }  // namespace rhap::ai

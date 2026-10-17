@@ -99,6 +99,18 @@ TEST_CASE("transcription: words, times, captions and cutting by deleting words")
   CHECK(std::llabs(back[0].a - cues[0].a) < kFlicks / 1000);
   CHECK(back[0].text == cues[0].text);
 
+  // "Um" is a filler
+  {
+    Project q = fx::project();
+    q.media.push_back(m);
+    q.transcripts.push_back(tr);
+    Editor eq(q, "main");
+    Clip cq = clipOf(q, m, 0);
+    REQUIRE(eq.overwrite({TrackKind::Audio, 0}, cq).empty());
+    auto f = ai::fillerWords(q, q.sequences[0], q.sequences[0].audio[0].clips[0]);
+    REQUIRE(f.size() == 1);
+    CHECK(lower(tr.words[f[0]].text).find("um") != std::string::npos);
+  }
   // the edit: delete the second phrase's words; the cut takes the phrase and most of its pauses
   Project p = fx::project();
   p.media.push_back(m);
