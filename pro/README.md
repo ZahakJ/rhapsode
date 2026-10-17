@@ -71,8 +71,10 @@ invite key for the web commands comes from `RHAPSODE_KEY`, never from the comman
 ## Tests
 
 `ctest` runs the engine suite (doctest), a headless editor test that drives real mouse input through
-the UI and checks the saved project, and a round trip against a real Rhapsode server. Some of what they
-hold the engine to:
+the UI and checks the saved project, a round trip against a real Rhapsode server, our interchange files
+against the OpenTimelineIO reference adapters in both directions (when `pro/build/otio/.venv` has
+`opentimelineio otio-cmx3600-adapter otio-fcpx-xml-adapter otio-fcp-adapter`), and every local-AI
+feature inside a network namespace with no route out. Some of what they hold the engine to:
 
 - 100 000 random edits never break a timeline invariant, and a refused edit changes nothing
 - `kill -9` during editing never leaves an unreadable autosave
