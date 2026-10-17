@@ -1,0 +1,36 @@
+{
+ "result_minutes": 4.388992013888889,
+ "source_minutes": 19.136666666666667,
+ "steps": [
+  {
+   "s": 0.014620963,
+   "step": "import"
+  },
+  {
+   "s": 8.123738704,
+   "step": "transcribe",
+   "words": 3639
+  },
+  {
+   "s": 0.002069222,
+   "step": "remove filler words",
+   "words": 61
+  },
+  {
+   "cuts": 100,
+   "s": 0.004655145,
+   "step": "delete sentences (text edit)"
+  },
+  {
+   "cues": 76,
+   "s": 0.003621505,
+   "step": "captions"
+  },
+  {
+   "encoder": "h264_nvenc",
+   "s": 18.544033186,
+   "step": "export 720p H.264"
+  }
+ ],
+ "total_s": 26.717090312
+}

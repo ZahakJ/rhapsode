@@ -1,0 +1,9 @@
+{
+  "bytes": 81136516,
+  "encoder": "hevc_nvenc",
+  "fps": 58.21640184350105,
+  "frames": 1200,
+  "preset": "youtube-4k",
+  "realtime_x": 0.9702733640583509,
+  "seconds": 20.612747645
+}

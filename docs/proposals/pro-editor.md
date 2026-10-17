@@ -140,9 +140,9 @@ seek latency, time to first frame after opening a project. Compared with Kdenliv
 and with ffmpeg as a floor. Resolve and Premiere are not installed on this machine; where they are compared,
 the comparison is with their documented workflow, never with invented numbers.
 
-## Status (2026-10-16)
+## Status (2026-10-17)
 
-Built and tested: M1 in full; M2 except the playback bar, which is measured and recorded in
-[BENCHMARKS.md](../BENCHMARKS.md) when the GPU is free of other work; M3 (scopes on the CPU as above); M4 except motion paths drawn on the viewer and title templates; M5 (transcription, text editing,
+Built and tested: M1 in full; M2 except seek on long-GOP originals (382 ms median against the 100 ms bar; 26 ms on proxies),
+measured in [BENCHMARKS.md](../BENCHMARKS.md) — the playback bar is met there; M3 (scopes on the CPU as above); M4 except motion paths drawn on the viewer and title templates; M5 (transcription, text editing,
 captions, silence, scenes, reframe, background removal, noise reduction, voice isolation); M6 except
 smart render. The tests named in [pro/README.md](../../pro/README.md#tests) are the proof for each.

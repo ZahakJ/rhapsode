@@ -1,0 +1,23 @@
+{
+  "achieved_fps": 29.99999889900004,
+  "codec": "h264",
+  "decode": "nvdec",
+  "dropped": 0,
+  "drops_at_frames": [],
+  "fps": 30,
+  "frame_ms_max": 3.025626,
+  "frame_ms_p50": 0.834305,
+  "frame_ms_p95": 1.484475,
+  "frame_ms_p99": 1.898381,
+  "frames": 1800,
+  "paced": true,
+  "prefetch_hits": 5400,
+  "prefetch_waits": 123,
+  "proxies": false,
+  "seek_ms_max": 226.348578,
+  "seek_ms_p50": 121.666463,
+  "seek_ms_p95": 204.148676,
+  "size": "1920x1080",
+  "tracks": 3,
+  "wall_s": 60.000002202
+}

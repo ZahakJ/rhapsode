@@ -18,6 +18,8 @@ info() { echo "== $*" >&2; }
 # what else is on the GPU, at the start and the end: a number measured beside another job says so
 gpustate() { echo "== $1 $(date -Is)"; nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv,noheader; nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader; }
 gpustate start > "$OUT/gpu-state.txt"
+export GPU_LOG="$OUT/gpu-steps.txt"
+: > "$GPU_LOG"
 trap 'gpustate end >> "$OUT/gpu-state.txt"' EXIT
 
 info "sources"
