@@ -59,6 +59,9 @@ class App {
   void clipMenu();
   void task(const std::string& title, std::function<std::string()> work, std::function<void()> apply);
   void recoveryModal();
+  void webModal();
+  void loadWebSettings();
+  void saveWebSettings();
   void statusBar();
   void pollDialogs();
   void queueExport(const std::string& presetId, const std::string& out, bool marks);
@@ -103,6 +106,9 @@ class App {
   bool transcriptFocused_ = false;  // Delete there cuts words, not clips
   std::string exportPreset_ = "youtube-1080p", exportPath_;
   bool exportMarks_ = false;
+  // Rhapsode web (quick mode): where it lives and the invite key
+  std::string webServer_, webKey_, webLink_;
+  bool showWeb_ = false, publishExport_ = false;
 
   // async file dialogs
   struct DialogResult {

@@ -48,6 +48,9 @@ export type Config = {
   stemMaxS: number
   stemTimeoutMs: number
   maxPendingStems: number
+  /** Rhapsode Pro exports published as share links */
+  publishMaxBytes: number
+  publishMaxS: number
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -94,6 +97,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     stemMaxS: num(env.STEM_MAX_S, 900),
     stemTimeoutMs: num(env.STEM_TIMEOUT_MS, 30 * 60_000),
     maxPendingStems: num(env.MAX_PENDING_STEMS, 3),
+    publishMaxBytes: num(env.PUBLISH_MAX_BYTES, 2 * 1024 ** 3),
+    publishMaxS: num(env.PUBLISH_MAX_S, 3 * 3600),
   }
 }
 

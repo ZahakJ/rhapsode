@@ -230,6 +230,7 @@ export class Store {
       media: row.media,
       status: row.status,
       title: row.title,
+      ext: row.ext,
       url: row.url,
       duration: row.duration,
       width: row.width,
@@ -347,6 +348,7 @@ export class Store {
       posterUrl: `/m/${row.slug}.jpg`,
       shareUrl: `/m/${row.slug}`,
       createdAt: row.created_at,
+      origin: row.recipe_json.startsWith('{"pro"') ? "pro" : "web",
     }
   }
 

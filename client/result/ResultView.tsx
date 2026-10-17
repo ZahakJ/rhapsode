@@ -80,7 +80,7 @@ export function ResultView({ slug }: { slug: string }) {
           <button className="ms-btn ms-btn--primary" onClick={() => void copy()}>copy link</button>
           {canShare && <button className="ms-btn" onClick={() => void share()}>share…</button>}
           <a className="ms-btn" href={render.url} download={`${render.slug}.mp4`}>download mp4</a>
-          <a className="ms-btn" href={`#/remix/${encodeURIComponent(render.slug)}`}>remix</a>
+          {render.origin !== "pro" && <a className="ms-btn" href={`#/remix/${encodeURIComponent(render.slug)}`}>remix</a>}
           <a className="ms-btn ms-btn--ghost" href={render.shareUrl} target="_blank" rel="noreferrer">open share page ↗</a>
         </div>
         <div className="rh-result__share mono">{shareUrl}</div>
