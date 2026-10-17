@@ -101,6 +101,8 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Project, version, name, media, s
                                                 nextId)
 
 json toJson(const Project& p) { return p; }
+json clipJson(const Clip& c) { return c; }
+Clip clipFromJson(const json& j) { return j.get<Clip>(); }
 
 Project projectFromJson(const json& j) {
   try {
