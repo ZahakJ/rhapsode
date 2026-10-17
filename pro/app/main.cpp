@@ -124,6 +124,7 @@ void defaultLayout(ImGuiID dock) {
   ImGui::DockBuilderDockWindow("Scopes", scopes);
   ImGui::DockBuilderDockWindow("Timeline", tl);
   ImGui::DockBuilderDockWindow("Audio", audio);
+  ImGui::DockBuilderDockWindow("Transcript", left);
   ImGui::DockBuilderFinish(dock);
 }
 

@@ -19,6 +19,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 
+#include "engine/ai/transcribe.h"
 #include "engine/audio/mixer.h"
 #include "engine/io/project_io.h"
 #include "engine/media/decode.h"
@@ -41,6 +42,7 @@ int usage() {
                "  rpro new OUT.rpro FILE...              a project with the files cut end to end\n"
                "  rpro export PROJECT PRESET OUT [--in S] [--out S] [--sw-decode]\n"
                "  rpro frame PROJECT SECONDS OUT.png     render one frame\n"
+               "  rpro transcribe FILE [--lang L] [--model M] [--threads N] [--cpu] [--srt OUT]\n"
                "  rpro info PROJECT                      tracks and clips as JSON\n"
                "  rpro loudness PROJECT                  integrated loudness of the active sequence\n"
                "  rpro convert IN OUT                    project interchange (.rpro .otio .fcpxml .edl .xml)\n"
@@ -226,6 +228,39 @@ int cmdInfo(int argc, char** argv) {
   });
   std::printf("%s\n", nlohmann::json{{"sequence", s->name}, {"size", {s->width, s->height}}, {"fps", s->rate.fps()},
                                       {"duration", toSeconds(s->duration())}, {"markers", s->markers.size()}, {"tracks", tracks}}
+                          .dump(1)
+                          .c_str());
+  return 0;
+}
+
+int cmdTranscribe(int argc, char** argv) {
+  if (argc < 3) return usage();
+  ai::TranscribeOptions o;
+  o.model = arg(argc, argv, "--model", "");
+  o.language = arg(argc, argv, "--lang", "auto");
+  o.threads = std::stoi(arg(argc, argv, "--threads", "0"));
+  o.gpu = !flag(argc, argv, "--cpu");
+  Media m;
+  if (std::string e = probe(argv[2], m); !e.empty()) {
+    std::fprintf(stderr, "rpro: %s\n", e.c_str());
+    return 1;
+  }
+  Transcript t;
+  auto t0 = std::chrono::steady_clock::now();
+  std::string e = ai::transcribe(argv[2], o, t);
+  double el = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+  if (!e.empty()) {
+    std::fprintf(stderr, "rpro: %s\n", e.c_str());
+    return 1;
+  }
+  auto cues = ai::captions(t.words);
+  std::string srt = arg(argc, argv, "--srt", "");
+  if (!srt.empty()) writeAtomic(srt, ai::toSrt(cues));
+  std::string text;
+  for (auto& w : t.words) text += w.text;
+  std::printf("%s\n", nlohmann::json{{"language", t.language}, {"words", t.words.size()}, {"cues", cues.size()},
+                                      {"seconds", el}, {"media_seconds", toSeconds(m.duration)},
+                                      {"realtime_x", toSeconds(m.duration) / el}, {"text", text}}
                           .dump(1)
                           .c_str());
   return 0;
@@ -485,6 +520,7 @@ int main(int argc, char** argv) {
   if (c == "frame") return cmdFrame(argc, argv);
   if (c == "loudness") return cmdLoudness(argc, argv);
   if (c == "info") return cmdInfo(argc, argv);
+  if (c == "transcribe") return cmdTranscribe(argc, argv);
   if (c == "convert") return cmdConvert(argc, argv);
   if (c == "bench" && argc > 2 && std::string(argv[2]) == "playback") return cmdBenchPlayback(argc, argv);
   if (c == "bench" && argc > 2 && std::string(argv[2]) == "export") return cmdBenchExport(argc, argv);

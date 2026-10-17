@@ -26,6 +26,7 @@ std::string rproPath() {
 JobQueue::JobQueue() {
   exportThread_ = std::thread([this] { run(Job::Kind::Export); });
   proxyThread_ = std::thread([this] { run(Job::Kind::Proxy); });
+  taskThread_ = std::thread([this] { run(Job::Kind::Task); });
 }
 
 JobQueue::~JobQueue() {
@@ -37,6 +38,7 @@ JobQueue::~JobQueue() {
   }
   exportThread_.join();
   proxyThread_.join();
+  taskThread_.join();
 }
 
 void JobQueue::add(Job j) {
@@ -69,6 +71,13 @@ std::vector<std::pair<std::string, std::string>> JobQueue::takeProxies() {
   return v;
 }
 
+std::vector<std::function<void()>> JobQueue::takeApplies() {
+  std::lock_guard l(mu_);
+  auto v = std::move(applies_);
+  applies_.clear();
+  return v;
+}
+
 void JobQueue::clearFinished() {
   std::lock_guard l(mu_);
   std::erase_if(jobs_, [](auto& j) { return j->state != Job::State::Queued && j->state != Job::State::Running; });
@@ -90,6 +99,16 @@ void JobQueue::run(Job::Kind lane) {
     }
     if (!job) {
       std::this_thread::sleep_for(std::chrono::milliseconds(200));
+      continue;
+    }
+    if (job->work) {
+      std::string e = job->work();
+      std::lock_guard l(mu_);
+      if (job->state == Job::State::Cancelled) continue;
+      job->state = e.empty() ? Job::State::Done : Job::State::Failed;
+      job->error = e;
+      job->progress = 1;
+      if (e.empty() && job->apply) applies_.push_back(job->apply);
       continue;
     }
     int pipefd[2];

@@ -55,6 +55,9 @@ class App {
   void mixerPanel();
   void exportPanel();
   void shortcutsWindow();
+  void transcriptPanel();
+  void clipMenu();
+  void task(const std::string& title, std::function<std::string()> work, std::function<void()> apply);
   void recoveryModal();
   void statusBar();
   void pollDialogs();
@@ -95,6 +98,9 @@ class App {
   Drag drag_;
   bool editing_ = false;  // an inspector widget is mid-drag (one undo step for the whole drag)
   std::string selectedMedia_;
+  std::vector<size_t> pickedWords_;  // transcript selection (word indices)
+  size_t wordAnchor_ = 0;
+  bool transcriptFocused_ = false;  // Delete there cuts words, not clips
   std::string exportPreset_ = "youtube-1080p", exportPath_;
   bool exportMarks_ = false;
 

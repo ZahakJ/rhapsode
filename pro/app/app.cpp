@@ -7,6 +7,9 @@
 #include <cmath>
 #include <filesystem>
 
+#include "engine/ai/analysis.h"
+#include "engine/ai/sound.h"
+#include "engine/ai/transcribe.h"
 #include "engine/audio/mixer.h"
 #include "engine/interchange/interchange.h"
 #include "engine/io/project_io.h"
@@ -133,6 +136,7 @@ void App::pollDialogs() {
 
 void App::key(const SDL_KeyboardEvent& e) {
   if (ImGui::GetIO().WantTextInput) return;
+  if (transcriptFocused_ && (e.key == SDLK_DELETE || e.key == SDLK_BACKSPACE)) return;
   int mods = modsOf(e.mod);
   const auto& map = premiereKeys_ ? premiereKeymap() : rhapsodeKeymap();
   std::string a = actionFor(map, int(e.key), mods);
@@ -174,6 +178,7 @@ void App::frame(SDL_GPUCommandBuffer* cmd) {
         m.proxy = path;
         ++s_.revision;
       }
+  for (auto& f : jobs_.takeApplies()) f();
   player_.tick();
   // autosave two seconds after the last change
   static auto lastChange = SDL_GetTicks();
@@ -196,6 +201,7 @@ void App::frame(SDL_GPUCommandBuffer* cmd) {
   scopesPanel(cmd);
   mixerPanel();
   exportPanel();
+  transcriptPanel();
   statusBar();
   if (showShortcuts_) shortcutsWindow();
   if (showRecovery_) recoveryModal();
@@ -309,6 +315,7 @@ void App::menu() {
     }
     ImGui::EndMenu();
   }
+  clipMenu();
   if (ImGui::BeginMenu("View")) {
     ImGui::MenuItem("Premiere keymap", nullptr, &premiereKeys_);
     if (ImGui::MenuItem("Use proxies", nullptr, &proxies_)) frames_.setProxies(proxies_);
@@ -1250,6 +1257,161 @@ void App::recoveryModal() {
     }
     ImGui::EndPopup();
   }
+}
+
+}  // namespace rhap::app
+
+namespace rhap::app {
+
+void App::task(const std::string& title, std::function<std::string()> work, std::function<void()> apply) {
+  Job j;
+  j.kind = Job::Kind::Task;
+  j.title = title;
+  j.work = std::move(work);
+  j.apply = std::move(apply);
+  jobs_.add(std::move(j));
+  s_.status = title + " started";
+}
+
+void App::clipMenu() {
+  if (!ImGui::BeginMenu("Clip")) return;
+  Sequence* s = s_.seq();
+  const Clip* c = s && !s_.selection.empty() ? clipById(*s, *s_.selection.begin()) : nullptr;
+  const Media* m = c && c->kind == ClipKind::Media ? s_.project.findMedia(c->ref) : nullptr;
+  std::string clipId = c ? c->id : "", seqId = s ? s->id : "", path = m ? m->path : "", mediaId = m ? m->id : "";
+  ImGui::BeginDisabled(!m);
+  if (ImGui::MenuItem("Transcribe (local)", nullptr, false, ai::transcriptionAvailable())) {
+    auto out = std::make_shared<Transcript>();
+    out->media = mediaId;
+    task("transcribe " + m->name, [path, out] { return ai::transcribe(path, {}, *out); },
+         [this, out] {
+           std::erase_if(s_.project.transcripts, [&](const Transcript& t) { return t.media == out->media; });
+           s_.history.push(s_.project, "transcript");
+           s_.project.transcripts.push_back(*out);
+           ++s_.revision;
+           s_.status = std::to_string(out->words.size()) + " words (" + out->language + ")";
+         });
+  }
+  if (ImGui::MenuItem("Add captions from transcript", nullptr, false, m && s_.project.transcriptOf(mediaId))) {
+    s_.apply("captions", [&](Editor&) { return ai::addCaptions(s_.project, seqId, clipId) > 0 ? Err{} : Err{"no words in the clip"}; });
+  }
+  if (ImGui::MenuItem("Remove silence")) {
+    auto sil = std::make_shared<std::vector<ai::Range>>();
+    bool linkedPicture = false;
+    if (!c->link.empty())
+      forEachTrack(*s, [&](const Track& t, TrackRef r) {
+        for (auto& o : t.clips)
+          if (o.link == c->link && r.kind == TrackKind::Video) linkedPicture = true;
+      });
+    task("find silence in " + m->name, [path, sil] { *sil = ai::detectSilence(path); return std::string(); },
+         [this, sil, seqId, clipId, linkedPicture] {
+           std::string err;
+           int n = 0;
+           s_.apply("remove silence", [&](Editor&) {
+             n = ai::removeSilence(s_.project, seqId, clipId, *sil, linkedPicture, &err);
+             return n > 0 ? Err{} : Err{err.empty() ? "no silence found" : err};
+           });
+           if (n) s_.status = std::to_string(n) + " silences removed";
+         });
+  }
+  if (ImGui::MenuItem("Split at scene cuts", nullptr, false, m && m->hasVideo)) {
+    auto cuts = std::make_shared<std::vector<Tick>>();
+    task("find scene cuts in " + m->name, [path, cuts] { *cuts = ai::detectScenes(path); return std::string(); },
+         [this, cuts, seqId, clipId] {
+           int n = 0;
+           s_.apply("scene edit detection", [&](Editor&) {
+             n = ai::splitAtScenes(s_.project, seqId, clipId, *cuts);
+             return n > 0 ? Err{} : Err{"no cuts found"};
+           });
+           if (n) s_.status = std::to_string(n) + " scene cuts";
+         });
+  }
+  if (ImGui::MenuItem("Auto-reframe to the sequence", nullptr, false, m && m->hasVideo)) {
+    auto keys = std::make_shared<std::vector<ai::ReframeKey>>();
+    task("track the subject in " + m->name, [path, keys] { *keys = ai::trackSubject(path); return std::string(); },
+         [this, keys, seqId, clipId] {
+           s_.apply("auto reframe", [&](Editor&) { return ai::applyReframe(s_.project, seqId, clipId, *keys) > 0 ? Err{} : Err{"nothing to follow"}; });
+         });
+  }
+  ImGui::Separator();
+  auto processed = [&](const char* what, const char* suffix, bool voice) {
+    std::string out = (fs::path(path).parent_path() / (fs::path(path).stem().string() + "-" + suffix + ".flac")).string();
+    task(std::string(what) + " " + m->name,
+         [path, out, voice] { return voice ? ai::isolateVoice(path, out) : ai::denoise(path, out); },
+         [this, out, seqId, clipId, suffix] {
+           s_.apply(suffix, [&](Editor&) { return ai::swapSound(s_.project, seqId, clipId, out, suffix); });
+         });
+  };
+  if (ImGui::MenuItem("Reduce noise (sound)", nullptr, false, m && m->hasAudio)) processed("clean", "denoised", false);
+  if (ImGui::MenuItem("Isolate voice (Demucs)", nullptr, false, m && m->hasAudio)) processed("isolate voice in", "voice", true);
+  ImGui::EndDisabled();
+  ImGui::EndMenu();
+}
+
+void App::transcriptPanel() {
+  ImGui::Begin("Transcript");
+  transcriptFocused_ = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
+  Sequence* s = s_.seq();
+  const Clip* c = s && !s_.selection.empty() ? clipById(*s, *s_.selection.begin()) : nullptr;
+  if (!c || c->kind != ClipKind::Media) {
+    ImGui::TextDisabled("Select a clip with speech. Clip ▸ Transcribe makes its words; delete words here to cut them.");
+    ImGui::End();
+    return;
+  }
+  auto words = ai::wordsOnTimeline(s_.project, *s, *c);
+  if (words.empty()) {
+    ImGui::TextDisabled(s_.project.transcriptOf(c->ref) ? "No words inside this clip." : "No transcript yet: Clip ▸ Transcribe.");
+    ImGui::End();
+    return;
+  }
+  if (ImGui::Button("Delete selected words") || (ImGui::IsWindowFocused() && !pickedWords_.empty() &&
+                                                (ImGui::IsKeyPressed(ImGuiKey_Delete) || ImGui::IsKeyPressed(ImGuiKey_Backspace)))) {
+    std::string id = c->id, seq = s->id, err;
+    auto picked = pickedWords_;
+    s_.apply("delete words", [&](Editor&) {
+      int n = ai::deleteWords(s_.project, seq, id, picked, kFlicks / 20, &err);
+      return n > 0 ? Err{} : Err{err.empty() ? "nothing to cut" : err};
+    });
+    pickedWords_.clear();
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Export SRT…")) {
+    std::vector<Word> placed;
+    for (auto& w : words) placed.push_back(Word{w.a, w.b, w.text, 1});
+    std::string out = (s_.path.empty() ? fs::temp_directory_path() / "captions" : fs::path(s_.path).replace_extension("")).string() + ".srt";
+    s_.status = writeAtomic(out, ai::toSrt(ai::captions(placed))).empty() ? "wrote " + out : "could not write " + out;
+  }
+  ImGui::Separator();
+  ImGui::BeginChild("words");
+  float width = ImGui::GetContentRegionAvail().x, x = 0;
+  for (size_t i = 0; i < words.size(); ++i) {
+    const auto& w = words[i];
+    std::string t = w.text.empty() || w.text[0] != ' ' ? w.text : w.text.substr(1);
+    ImVec2 sz = ImGui::CalcTextSize(t.c_str());
+    if (x > 0 && x + sz.x + 8 < width) ImGui::SameLine(0, 4);
+    else x = 0;
+    bool now = s_.playhead >= w.a && s_.playhead < w.b;
+    bool picked = std::find(pickedWords_.begin(), pickedWords_.end(), w.index) != pickedWords_.end();
+    if (now) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.48f, 0.35f, 1));
+    ImGui::PushID(int(i));
+    if (ImGui::Selectable(t.c_str(), picked, 0, sz)) {
+      if (ImGui::GetIO().KeyShift && !pickedWords_.empty()) {
+        size_t lo = std::min(wordAnchor_, i), hi = std::max(wordAnchor_, i);
+        pickedWords_.clear();
+        for (size_t k = lo; k <= hi; ++k) pickedWords_.push_back(words[k].index);
+      } else {
+        pickedWords_ = {w.index};
+        wordAnchor_ = i;
+        s_.seek(w.a);
+        player_.seeked();
+      }
+    }
+    ImGui::PopID();
+    if (now) ImGui::PopStyleColor();
+    x += sz.x + 8;
+  }
+  ImGui::EndChild();
+  ImGui::End();
 }
 
 }  // namespace rhap::app

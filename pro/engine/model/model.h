@@ -211,6 +211,21 @@ struct Marker {
   bool operator==(const Marker&) const = default;
 };
 
+/** A spoken word with its media times (from local transcription). */
+struct Word {
+  Tick a = 0, b = 0;
+  std::string text;  // with its leading space, as the recogniser wrote it
+  float p = 1;       // confidence
+  bool operator==(const Word&) const = default;
+};
+
+struct Transcript {
+  std::string media;  // media id
+  std::string language;
+  std::vector<Word> words;
+  bool operator==(const Transcript&) const = default;
+};
+
 enum class WorkingSpace { Rec709, ACEScct, Rec2020 };
 enum class OutputSpace { Rec709, sRGB, Rec2020PQ, Rec2020HLG };
 
@@ -238,7 +253,14 @@ struct Project {
   WorkingSpace working = WorkingSpace::Rec709;
   OutputSpace output = OutputSpace::Rec709;
   int nextId = 1;
+  std::vector<Transcript> transcripts;
   bool operator==(const Project&) const = default;
+
+  const Transcript* transcriptOf(const std::string& mediaId) const {
+    for (auto& t : transcripts)
+      if (t.media == mediaId) return &t;
+    return nullptr;
+  }
 
   const Media* findMedia(const std::string& id) const;
   Sequence* findSequence(const std::string& id);

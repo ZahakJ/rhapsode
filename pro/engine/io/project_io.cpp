@@ -97,8 +97,10 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Track, id, kind, name, mute, sol
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Marker, id, t, dur, name, note, color)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Sequence, id, name, width, height, rate, sampleRate, background, video,
                                                 audio, markers, multicam)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Word, a, b, text, p)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Transcript, media, language, words)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Project, version, name, media, sequences, active, working, output,
-                                                nextId)
+                                                nextId, transcripts)
 
 json toJson(const Project& p) { return p; }
 json clipJson(const Clip& c) { return c; }
