@@ -70,4 +70,6 @@ S0=$(ls "$B"/src0-hevc10-3840x2160p60-60s.mp4); S1=$(ls "$B"/src1-hevc10-3840x21
   -filter_complex "[1]eq=saturation=1.2,scale=1728:-2,rotate=3*PI/180:c=none:ow=rotw(3*PI/180):oh=roth(3*PI/180)[a];[2]eq=saturation=1.2,scale=1728:-2,rotate=6*PI/180:c=none:ow=rotw(6*PI/180):oh=roth(6*PI/180)[b];[0][a]overlay=1901:162[o];[o][b]overlay=211:1026,format=p010le" \
   -c:v hevc_nvenc -profile:v main10 -preset p5 -cq 21 -c:a aac "$B/ffmpeg-floor.mp4" 2> "$B/ffmpeg-floor.time" || true
 tail -1 "$B/ffmpeg-floor.time" > "$OUT/ffmpeg-floor-4k-hevc.json"
+info "task 1: a 20-minute interview to about 5 minutes with captions"
+"$BIN/rpro" bench interview --minutes 20 > "$OUT/pro-task-interview.json"
 info "done"
