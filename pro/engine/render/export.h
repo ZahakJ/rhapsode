@@ -38,12 +38,20 @@ struct ExportJob {
   std::string path;
   Tick in = 0, out = -1;  // -1 = to the end
   bool hwDecode = true;
+  /**
+   * Smart render: the picture is encoded in GOP-length segments cached by a
+   * hash of everything that can change their frames; unchanged segments are
+   * reused as packets. Long-GOP presets then use no B-frames (so segments join).
+   */
+  bool smart = false;
+  std::string cacheDir;  // empty = ~/.cache/rhapsode-pro/smart
 };
 
 struct ExportProgress {
   int64_t frame = 0, total = 0;
   double fps = 0;
   std::string encoder;
+  int64_t reused = 0;  // smart render: frames taken from the cache
 };
 
 /** Runs an export to completion; returns "" or the reason. `progress` returning false cancels. */
