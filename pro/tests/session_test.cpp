@@ -107,20 +107,22 @@ TEST_CASE("insert, marks, extract, Q/W, E and undo through actions") {
   runAction(s, "mark-out");
   REQUIRE(runAction(s, "extract").empty());
   CHECK(s.seq()->duration() == sec(13));
-  // Q at 5 s: the clip under the playhead loses its head up to here, ripple
+  // V1 is now cam 0–2, cam 2–8, broll 8–13. Q at 5 s: the clip under the playhead (2–8) loses 2–5, ripple
   s.playhead = sec(5);
   REQUIRE(runAction(s, "trim-head-to-playhead").empty());
-  CHECK(s.seq()->duration() == sec(12));
-  // W at 6 s: the tail goes
+  CHECK(s.seq()->duration() == sec(10));
+  CHECK(s.playhead == sec(2));  // Premiere parks the playhead at the new edit
+  // W at 6 s: broll (5–10) loses 6–10
   s.playhead = sec(6);
   REQUIRE(runAction(s, "trim-tail-to-playhead").empty());
-  Tick d = s.seq()->duration();
-  // E: roll the nearest cut to the playhead, length unchanged
+  CHECK(s.seq()->duration() == sec(6));
+  // E at 5.5 s: the nearest cut (5 s) rolls to the playhead; the length stays
   s.playhead = sec(5.5);
   REQUIRE(runAction(s, "extend-edit").empty());
-  CHECK(s.seq()->duration() == d);
-  // undo walks back every step
-  for (int i = 0; i < 5; ++i) REQUIRE(runAction(s, "undo").empty());
+  CHECK(s.seq()->duration() == sec(6));
+  CHECK(s.seq()->video[0].clips[1].end() == sec(5.5));
+  // undo walks back E, W, Q and the extract
+  for (int i = 0; i < 4; ++i) REQUIRE(runAction(s, "undo").empty());
   CHECK(s.seq()->duration() == sec(15));
   CHECK(check(s.project).empty());
 }
@@ -163,6 +165,7 @@ TEST_CASE("kill -9 in the middle of editing never leaves an unreadable autosave"
   int trials = 25, recovered = 0;
   int64_t worstLag = 0;
   for (int t = 0; t < trials; ++t) {
+    std::filesystem::remove(autosavePath(path));  // each trial starts with no autosave
     int fds[2];
     REQUIRE(pipe(fds) == 0);
     pid_t pid = fork();
@@ -181,6 +184,12 @@ TEST_CASE("kill -9 in the middle of editing never leaves an unreadable autosave"
     close(fds[0]);
     Project p;
     std::string err;
+    if (!std::filesystem::exists(autosavePath(path))) {
+      // killed before its first autosave: nothing to recover, nothing damaged
+      CHECK(n < 100000);
+      ++recovered;
+      continue;
+    }
     bool ok = loadProject(autosavePath(path), p, err);
     CHECK_MESSAGE(ok, "trial " << t << ": " << err);
     if (ok) {
