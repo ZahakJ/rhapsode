@@ -165,7 +165,7 @@ void App::key(const SDL_KeyboardEvent& e) {
     if (e.key == SDLK_EQUALS || e.key == SDLK_KP_PLUS) pxPerSec_ = std::min(4000.0, pxPerSec_ * 1.25);
     if (e.key == SDLK_MINUS || e.key == SDLK_KP_MINUS) pxPerSec_ = std::max(2.0, pxPerSec_ / 1.25);
     if (e.key == SDLK_BACKSLASH && s_.seq()) {
-      double w = std::max(200.0, ImGui::GetMainViewport()->Size.x - 300.0);
+      double w = laneW_ > 0 ? laneW_ * 0.97 : std::max(200.0, ImGui::GetMainViewport()->Size.x - 300.0);
       pxPerSec_ = std::clamp(w / std::max(1.0, toSeconds(s_.seq()->duration())), 2.0, 4000.0);
       scroll_ = 0;
     }
@@ -600,6 +600,7 @@ void App::timeline() {
   ImVec2 size = ImGui::GetContentRegionAvail();
   const float header = 120, ruler = 26, vh = 50, ah = 40;
   const float x0 = origin.x + header;
+  laneW_ = size.x - header;
   auto xOf = [&](Tick t) { return float(x0 + (toSeconds(t) - scroll_) * pxPerSec_); };
   auto tOf = [&](float x) { return fromSeconds(scroll_ + (x - x0) / pxPerSec_); };
   // rows: video top (highest first), then audio
@@ -717,18 +718,22 @@ void App::timeline() {
       if (c.speed != 1) name += "  " + std::to_string(int(std::lround(c.speed * 100))) + "%";
       dl->PushClipRect(ImVec2(std::max(cx0, x0), ry), ImVec2(cx1, ry + r.h), true);
       // a picture of the clip at its head
-      if (r.ref.kind == TrackKind::Video && c.kind == ClipKind::Media && cx1 - cx0 > 70) {
+      if (r.ref.kind == TrackKind::Video && c.kind == ClipKind::Media && cx1 - cx0 > 30) {
         if (const Media* m = s_.project.findMedia(c.ref); m && m->hasVideo) {
-          auto it = thumbs_.find(m->path);
-          if (it == thumbs_.end() && !thumbsPending_.count(m->path)) {
-            thumbsPending_.insert(m->path);
+          // one picture per clip head, to the quarter second: shots cut from one file each show their own
+          Tick head = m->kind == MediaKind::Image ? 0 : c.in / (kFlicks / 4) * (kFlicks / 4);
+          std::string key = m->path + "@" + std::to_string(head);
+          auto it = thumbs_.find(key);
+          if (it == thumbs_.end() && !thumbsPending_.count(key)) {
+            thumbsPending_.insert(key);
             auto px = std::make_shared<std::vector<uint8_t>>();
             auto hh = std::make_shared<int>(0);
             std::string path = m->path;
-            Tick at = m->kind == MediaKind::Image ? 0 : std::min<Tick>(m->duration / 10, kFlicks);
+            // a clip at the very head of its file skips a likely black first frame
+            Tick at = m->kind == MediaKind::Image ? 0 : head > 0 ? head : std::min<Tick>(m->duration / 10, kFlicks / 2);
             task("thumbnail", [px, hh, path, at] { *px = ai::thumbnail(path, at, 160, *hh); return std::string(); },
-                 [this, px, hh, path] {
-                   thumbsPending_.erase(path);
+                 [this, px, hh, key] {
+                   thumbsPending_.erase(key);
                    if (px->empty()) return;
                    auto t = std::make_unique<Thumb>();
                    t->tex = gpu_.make(160, *hh, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_SAMPLER);
@@ -738,7 +743,7 @@ void App::timeline() {
                    gpu_.endUploads();
                    SDL_SubmitGPUCommandBuffer(up);
                    t->bind = {t->tex.tex, gpu_.linear()};
-                   thumbs_[path] = std::move(t);
+                   thumbs_[key] = std::move(t);
                  });
           } else if (it != thumbs_.end()) {
             float th = r.h - 6, tw = th * float(it->second->tex.w) / float(std::max(1, it->second->tex.h));
@@ -1939,14 +1944,27 @@ void App::transcriptPanel() {
   ImGui::Separator();
   ImGui::BeginChild("words");
   float width = ImGui::GetContentRegionAvail().x, x = 0;
+  bool described = false;  // inside "[Birds chirping]": the recogniser describing, not speech
   for (size_t i = 0; i < words.size(); ++i) {
     const auto& p = words[i];
     std::string t = p.w.text.empty() || p.w.text[0] != ' ' ? p.w.text : p.w.text.substr(1);
     ImVec2 sz = ImGui::CalcTextSize(t.c_str());
-    if (x > 0 && x + sz.x + 8 < width) ImGui::SameLine(0, 4);
-    else x = 0;
+    // a pause of a second and a half, or another clip, starts a paragraph, headed by its time
+    bool para = i == 0 || words[i - 1].clip != p.clip || p.w.a - words[i - 1].w.b > kFlicks * 3 / 2;
+    if (para) {
+      if (i > 0) ImGui::Dummy(ImVec2(0, 4));
+      ImGui::TextDisabled("%s", tc(s_, p.w.a).c_str());
+      x = 0;
+    } else if (x > 0 && x + sz.x + 8 < width) {
+      ImGui::SameLine(0, 4);
+    } else {
+      x = 0;
+    }
     bool now = s_.playhead >= p.w.a && s_.playhead < p.w.b;
-    if (now) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.48f, 0.35f, 1));
+    if (!t.empty() && (t[0] == '[' || t[0] == '(')) described = true;
+    bool sound = described;
+    if (!t.empty() && (t.back() == ']' || t.back() == ')')) described = false;
+    ImGui::PushStyleColor(ImGuiCol_Text, now ? ImVec4(1, 0.48f, 0.35f, 1) : sound ? ImVec4(0.5f, 0.5f, 0.55f, 1) : ImGui::GetStyleColorVec4(ImGuiCol_Text));
     ImGui::PushID(int(i));
     if (ImGui::Selectable(t.c_str(), picked(p), 0, sz)) {
       if (ImGui::GetIO().KeyShift && !pickedWords_.empty()) {
@@ -1961,7 +1979,7 @@ void App::transcriptPanel() {
       }
     }
     ImGui::PopID();
-    if (now) ImGui::PopStyleColor();
+    ImGui::PopStyleColor();
     x += sz.x + 8;
   }
   ImGui::EndChild();

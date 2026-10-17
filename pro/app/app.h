@@ -105,6 +105,7 @@ class App {
 
   // timeline
   double pxPerSec_ = 60, scroll_ = 0;
+  float laneW_ = 0;  // the timeline's lanes, wide (for zoom to fit)
   Drag drag_;
   bool editing_ = false;  // an inspector widget is mid-drag (one undo step for the whole drag)
   std::string selectedMedia_;
@@ -118,7 +119,7 @@ class App {
     gfx::Texture tex;
     SDL_GPUTextureSamplerBinding bind{};
   };
-  std::map<std::string, std::unique_ptr<Thumb>> thumbs_;  // per media path
+  std::map<std::string, std::unique_ptr<Thumb>> thumbs_;  // per media path and clip head
   std::set<std::string> thumbsPending_;  // ctrl-click picks several (multicam)
   std::vector<ai::WordPick> pickedWords_;  // transcript selection, across the track's clips
   size_t wordAnchor_ = 0;
