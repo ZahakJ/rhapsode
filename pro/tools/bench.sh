@@ -5,6 +5,8 @@
 # three 4K60 HEVC 10-bit tracks, the base full frame, two graded, scaled, rotated PiPs.
 set -eu
 PRO="$(cd "$(dirname "$0")/.." && pwd)"
+# never measure while a big compile runs on the same CPU
+while [ -e "$PRO/build/.cpu-busy" ]; do sleep 10; done
 BIN="$PRO/build/bin"; OUT="$PRO/../docs/benchmarks"; B="$PRO/build/bench"
 mkdir -p "$OUT" "$B"
 export RPRO_HOLDS_GPU_LOCK=1
