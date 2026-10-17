@@ -23,7 +23,7 @@ info "sources"
 info "rhapsode pro: paced playback (real time, 60 s)"
 "$BIN/rpro" bench playback > "$OUT/pro-playback-4k60x3.json"
 info "rhapsode pro: paced playback with all-intra proxies (seek latency)"
-"$BIN/rpro" bench playback --proxies > "$OUT/pro-playback-4k60x3-proxies.json"
+"$BIN/rpro" bench playback --proxies > "$OUT/pro-playback-4k60x3-proxies.json" || echo "proxies run failed" >&2
 info "rhapsode pro: unpaced throughput"
 "$BIN/rpro" bench playback --unpaced > "$OUT/pro-throughput-4k60x3.json"
 info "rhapsode pro: 1080p30 H.264, 3 tracks"
