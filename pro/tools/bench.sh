@@ -62,7 +62,7 @@ tail -1 "$B/melt-null.log" > "$OUT/kdenlive-throughput-4k60x3.json"
 info "kdenlive: export HEVC (the best encoder its flatpak offers)"
 VC=$($MELT -query video_codecs 2>/dev/null | grep -oE "hevc_nvenc|libx265" | head -1 || echo libx265)
 /usr/bin/time -f '{"wall_s": %e, "max_rss_kb": %M, "vcodec": "'"$VC"'"}' $MELT "$B/bench.mlt" \
-  -consumer avformat:"$B/kdenlive-export.mp4" vcodec=$VC pix_fmt=yuv420p10le vb=40M acodec=aac real_time=-4 \
+  -consumer avformat:"$B/kdenlive-export.mp4" vcodec=$VC pix_fmt=p010le vb=40M acodec=aac real_time=-4 \
   > /dev/null 2> "$B/melt-export.log" || true
 tail -1 "$B/melt-export.log" > "$OUT/kdenlive-export-4k-hevc.json"
 
