@@ -77,6 +77,8 @@ App::App(SDL_Window* w, gfx::Gpu& gpu)
 
 App::~App() {
   for (auto* t : {&work_, &view_, &scopeSrc_, &waveTex_, &vecTex_, &paradeTex_}) gpu_.release(*t);
+  for (auto& t : angleWork_) gpu_.release(t);
+  for (auto& t : angleView_) gpu_.release(t);
 }
 
 void App::requestQuit() {
@@ -312,6 +314,38 @@ void App::menu() {
         }
       ImGui::EndMenu();
     }
+    auto reframed = [&](int w, int h) {
+      std::map<std::string, std::string> paths;
+      for (auto& t : s_.seq()->video)
+        for (auto& c : t.clips)
+          if (const Media* m = c.kind == ClipKind::Media ? s_.project.findMedia(c.ref) : nullptr)
+            if (m->hasVideo && m->kind == MediaKind::Video) paths[m->path] = m->path;
+      auto subj = std::make_shared<std::map<std::string, std::vector<ai::ReframeKey>>>();
+      std::string seqId = s_.seq()->id;
+      task("reframe to " + std::to_string(w) + "×" + std::to_string(h), [paths, subj] {
+        for (auto& [path, _] : paths) (*subj)[path] = ai::trackSubject(path);
+        return std::string();
+      }, [this, subj, seqId, w, h] {
+        std::string id;
+        s_.apply("reframed copy", [&](Editor&) {
+          id = ai::reframedCopy(s_.project, seqId, w, h, *subj);
+          return id.empty() ? Err{"no sequence"} : Err{};
+        });
+        if (!id.empty()) s_.project.active = id, ++s_.revision;
+      });
+    };
+    if (ImGui::MenuItem("Vertical copy, reframed (1080×1920)")) reframed(1080, 1920);
+    if (ImGui::MenuItem("Square copy, reframed (1080×1080)")) reframed(1080, 1080);
+    if (ImGui::BeginMenu("Open sequence")) {
+      for (auto& q : s_.project.sequences)
+        if (!q.multicam && ImGui::MenuItem(q.name.c_str(), nullptr, q.id == s_.project.active)) {
+          s_.project.active = q.id;
+          s_.selection.clear();
+          ++s_.revision;
+        }
+      ImGui::EndMenu();
+    }
+    ImGui::Separator();
     if (ImGui::BeginMenu("Add shape")) {
       auto add = [&](ClipKind k, ShapeKind sh) {
         std::string seqId = s_.seq()->id;
@@ -346,6 +380,7 @@ void App::menu() {
     ImGui::MenuItem("Premiere keymap", nullptr, &premiereKeys_);
     if (ImGui::MenuItem("Use proxies", nullptr, &proxies_)) frames_.setProxies(proxies_);
     ImGui::MenuItem("Make proxies on import", nullptr, &autoProxies_);
+    ImGui::MenuItem("Multicam angles in the viewer", nullptr, &multicamView_);
     ImGui::MenuItem("Keyboard shortcuts", "?", &showShortcuts_);
     ImGui::EndMenu();
   }
@@ -400,6 +435,39 @@ void App::viewer(SDL_GPUCommandBuffer* cmd) {
     viewBind_ = {view_.tex, gpu_.linear()};
     ImVec2 cur = ImGui::GetCursorPos();
     ImGui::SetCursorPos(ImVec2(cur.x + (avail.x - w) / 2, cur.y + (avail.y - h) / 2));
+    // multicam: every angle beside the program; a click cuts to it at the playhead
+    const Clip* mcClip = s_.clipAt(s_.targetVideo, s_.playhead);
+    const Sequence* mc = mcClip && mcClip->kind == ClipKind::Multicam ? s_.project.findSequence(mcClip->ref) : nullptr;
+    if (mc && multicamView_ && !mc->video.empty()) {
+      int n = std::min<int>(9, int(mc->video.size()));
+      int cols = n <= 1 ? 1 : n <= 4 ? 2 : 3, rows = (n + cols - 1) / cols;
+      float gw = avail.x * 0.48f, cellW = gw / cols, cellH = cellW / float(aspect);
+      if (cellH * rows > avail.y) cellH = avail.y / rows, cellW = cellH * float(aspect);
+      Tick at = mcClip->sourceAt(frameStart(frameAt(s_.playhead, s->rate), s->rate));
+      ImVec2 g0(ImGui::GetWindowPos().x + cur.x - ImGui::GetScrollX(), ImGui::GetWindowPos().y + cur.y - ImGui::GetScrollY());
+      for (int a = 0; a < n; ++a) {
+        int aw = std::max(16, int(cellW)) & ~1, ah = std::max(16, int(cellH)) & ~1;
+        renderer_.renderAngle(cmd, s_.project, *mc, at, a, angleWork_[a], aw, ah);
+        gpu_.ensure(angleView_[a], aw, ah, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER);
+        renderer_.output(cmd, angleWork_[a], angleView_[a], s_.project, mc->background);
+        angleBind_[a] = {angleView_[a].tex, gpu_.linear()};
+        ImGui::SetCursorScreenPos(ImVec2(g0.x + (a % cols) * cellW, g0.y + (a / cols) * cellH));
+        ImGui::PushID(a);
+        if (ImGui::ImageButton("angle", ImTextureID(&angleBind_[a]), ImVec2(cellW - 6, cellH - 6))) {
+          s_.switchAngle(a);
+        }
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImVec2 tl = ImGui::GetItemRectMin(), br = ImGui::GetItemRectMax();
+        if (mcClip->angle == a) dl->AddRect(tl, br, kAccent, 0, 0, 3);
+        dl->AddText(ImVec2(tl.x + 6, tl.y + 4), IM_COL32(255, 255, 255, 230), (std::to_string(a + 1) + "  " + mc->video[size_t(a)].name).c_str());
+        ImGui::PopID();
+      }
+      // the program beside the angles
+      w = avail.x * 0.5f;
+      h = float(w / aspect);
+      if (h > avail.y) h = avail.y, w = float(h * aspect);
+      ImGui::SetCursorPos(ImVec2(cur.x + avail.x - w, cur.y + (avail.y - h) / 2));
+    }
     ImVec2 imgPos = ImGui::GetCursorScreenPos();
     ImGui::Image(ImTextureID(&viewBind_), ImVec2(w, h));
     bool imgHovered = ImGui::IsItemHovered();
@@ -832,9 +900,9 @@ void App::bin() {
   ImGui::SameLine();
   ImGui::BeginDisabled(binPicked_.size() < 2);
   if (ImGui::Button("Multicam (sync by sound)")) {
-    std::vector<std::string> ids(binPicked_.begin(), binPicked_.end()), paths;
-    for (auto& id : ids)
-      if (const Media* m = s_.project.findMedia(id)) paths.push_back(m->path);
+    std::vector<std::string> ids, paths;
+    for (auto& m : s_.project.media)  // angles in bin order
+      if (binPicked_.count(m.id)) ids.push_back(m.id), paths.push_back(m.path);
     auto off = std::make_shared<std::vector<Tick>>();
     auto err = std::make_shared<std::string>();
     task("sync " + std::to_string(ids.size()) + " angles", [paths, off, err] {
@@ -1012,7 +1080,25 @@ void App::inspector() {
   if (!c) {
     if (s) {
       ImGui::TextDisabled("Sequence");
-      ImGui::Text("%s  %dx%d  %.3g fps  %d Hz", s->name.c_str(), s->width, s->height, s->rate.fps(), s->sampleRate);
+      std::string name = s->name;
+      if (ImGui::InputText("Name", &name)) s->name = name, ++s_.revision;
+      int size[2] = {s->width, s->height};
+      if (ImGui::InputInt2("Size", size, ImGuiInputTextFlags_EnterReturnsTrue) && size[0] >= 16 && size[1] >= 16) {
+        s_.history.push(s_.project, "sequence size");
+        s->width = size[0] & ~1;
+        s->height = size[1] & ~1;
+        ++s_.revision;
+      }
+      const char* rates[] = {"23.976", "24", "25", "29.97", "30", "50", "59.94", "60"};
+      const Rate rv[] = {kRate23976, {24, 1}, {25, 1}, kRate2997, {30, 1}, {50, 1}, kRate5994, {60, 1}};
+      int ri = -1;
+      for (int i = 0; i < 8; ++i)
+        if (rv[i] == s->rate) ri = i;
+      if (ImGui::Combo("Frame rate", &ri, rates, 8)) {
+        s_.history.push(s_.project, "frame rate");
+        s->rate = rv[ri];
+        ++s_.revision;
+      }
       const char* ws[] = {"Rec.709", "ACEScct", "Rec.2020"};
       const char* os[] = {"Rec.709", "sRGB", "Rec.2020 PQ", "Rec.2020 HLG"};
       int w = int(s_.project.working), o = int(s_.project.output);

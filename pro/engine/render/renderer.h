@@ -64,6 +64,10 @@ class Renderer {
   /** composites `s` at t into `target` (created/resized to the sequence size, RGBA16F) */
   std::string render(SDL_GPUCommandBuffer* cmd, const Project& p, const Sequence& s, Tick t, gfx::Texture& target);
 
+  /** one angle of a multicam sequence at its time t, into `target` (any size; made RGBA16F if empty) */
+  std::string renderAngle(SDL_GPUCommandBuffer* cmd, const Project& p, const Sequence& multicam, Tick t, int angle,
+                          gfx::Texture& target, int w, int h);
+
   /** working-linear `src` → `dst` encoded for output `o` (RGB), background flattened when flatten */
   void output(SDL_GPUCommandBuffer* cmd, const gfx::Texture& src, gfx::Texture& dst, const Project& p,
               std::array<double, 3> background, bool flatten = true);

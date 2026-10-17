@@ -116,4 +116,35 @@ TEST_CASE("multicam: angles synced by their sound, to the sample") {
   REQUIRE_MESSAGE(err.empty(), err);
   CHECK_MESSAGE(std::llabs(sampleAt(off[1], 48000) - sampleAt(-fromSeconds(1.234), 48000)) <= 1, "B " << toSeconds(off[1]));
   CHECK_MESSAGE(std::llabs(sampleAt(off[2], 48000) - sampleAt(fromSeconds(2.5), 48000)) <= 1, "C " << toSeconds(off[2]));
+  // short takes and a two-minute search: a sliver of overlap must not win
+  std::string s1 = make("shortA.wav", "-i '" + room + "' -af atrim=end=12 -c:a pcm_f32le");
+  std::string s2 = make("shortB.wav", "-i '" + room + "' -af \"atrim=start=1.3:end=13.3,asetpts=PTS-STARTPTS\" -c:a pcm_f32le");
+  auto off2 = ai::syncByAudio({s1, s2}, 120 * kFlicks, &err);
+  CHECK_MESSAGE(std::llabs(sampleAt(off2[1], 48000) - sampleAt(-fromSeconds(1.3), 48000)) <= 1, "short B " << toSeconds(off2[1]));
+}
+
+TEST_CASE("a vertical copy of a sequence, reframed clip by clip") {
+  std::string path = fx::mediaDir() + "/subject.mp4";
+  REQUIRE(std::filesystem::exists(path));
+  Project p = fx::project();
+  Media m;
+  m.id = "subject";
+  REQUIRE(probe(path, m).empty());
+  p.media.push_back(m);
+  Editor ed(p, "main");
+  Clip c = clipOf(p, m, 0), a = clipOf(p, m, 0);
+  c.link = a.link = "L";
+  REQUIRE(ed.overwrite({TrackKind::Video, 0}, c).empty());
+  REQUIRE(ed.overwrite({TrackKind::Audio, 0}, a).empty());
+  std::map<std::string, std::vector<ai::ReframeKey>> subj{{path, ai::trackSubject(path, 6, false)}};
+  std::string v = ai::reframedCopy(p, "main", 1080, 1920, subj);
+  const Sequence* q = p.findSequence(v);
+  REQUIRE(q);
+  CHECK(q->width == 1080);
+  CHECK(q->video[0].clips[0].xf.x.animated());
+  CHECK(q->video[0].clips[0].id != c.id);
+  CHECK(q->video[0].clips[0].link == q->audio[0].clips[0].link);  // links survive, with new names
+  CHECK(q->video[0].clips[0].link != "L");
+  CHECK(p.sequences[0].video[0].clips[0].xf.scale.value == 1);  // the original is untouched
+  CHECK(check(p).empty());
 }

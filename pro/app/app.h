@@ -85,6 +85,9 @@ class App {
 
   // viewer
   gfx::Texture work_, view_;
+  gfx::Texture angleWork_[9], angleView_[9];
+  SDL_GPUTextureSamplerBinding angleBind_[9]{};
+  bool multicamView_ = true;
   SDL_GPUTextureSamplerBinding viewBind_{};
   Tick renderedAt_ = -1;
   uint64_t renderedRev_ = ~0ull;

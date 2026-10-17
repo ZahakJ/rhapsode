@@ -2,6 +2,7 @@
 // Local analysis that edits: silence, scene cuts, a reframing path. All run
 // on this machine from the media itself; no network, no account.
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -54,6 +55,14 @@ std::vector<ReframeKey> trackSubject(const std::string& path, double perSecond =
  * it to cover and keyframing its position to follow the subject.
  */
 int applyReframe(Project& p, const std::string& seqId, const std::string& clipId, const std::vector<ReframeKey>& keys);
+
+/**
+ * A copy of a sequence in another shape (e.g. 1080×1920), every picture clip
+ * reframed to follow its subject. `subjects` maps media path → tracked path
+ * (from trackSubject; missing media are centred). Returns the new sequence id.
+ */
+std::string reframedCopy(Project& p, const std::string& seqId, int width, int height,
+                         const std::map<std::string, std::vector<ReframeKey>>& subjects);
 
 /**
  * Sync by sound: how far into each file the moment the first file starts
