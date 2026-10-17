@@ -6,6 +6,7 @@
 #include <SDL3/SDL.h>
 #include <imgui.h>
 
+#include <map>
 #include <memory>
 #include <set>
 #include <mutex>
@@ -109,7 +110,16 @@ class App {
   std::string selectedMedia_;
   std::set<std::string> binPicked_;
   std::set<std::string> proxyPending_;
-  bool autoProxies_ = true;  // ctrl-click picks several (multicam)
+  bool autoProxies_ = true;
+  // waveforms, per media path, computed in the background
+  std::map<std::string, std::shared_ptr<std::vector<float>>> waves_;
+  std::set<std::string> wavesPending_;
+  struct Thumb {
+    gfx::Texture tex;
+    SDL_GPUTextureSamplerBinding bind{};
+  };
+  std::map<std::string, std::unique_ptr<Thumb>> thumbs_;  // per media path
+  std::set<std::string> thumbsPending_;  // ctrl-click picks several (multicam)
   std::vector<ai::WordPick> pickedWords_;  // transcript selection, across the track's clips
   size_t wordAnchor_ = 0;
   bool transcriptFocused_ = false;

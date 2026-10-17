@@ -7,6 +7,11 @@
 
 #include "../media/decode.h"
 
+extern "C" {
+#include <libavutil/frame.h>
+#include <libswscale/swscale.h>
+}
+
 namespace rhap::ai {
 
 // ——— silence ———
@@ -315,6 +320,43 @@ std::string reframedCopy(Project& p, const std::string& seqId, int width, int he
     applyReframe(p, id, cid, it != subjects.end() && !it->second.empty() ? it->second : centre);
   }
   return id;
+}
+
+std::vector<uint8_t> thumbnail(const std::string& path, Tick t, int w, int& h) {
+  std::vector<uint8_t> out;
+  VideoDecoder d;
+  if (!d.open(path, false).empty()) return out;
+  const VideoFrame* f = d.frameAt(t);
+  if (!f || !f->av) return out;
+  const AVFrame* a = f->av.get();
+  h = std::max(2, int(std::lround(double(w) * a->height / std::max(1, a->width))));
+  SwsContext* sws = sws_getContext(a->width, a->height, AVPixelFormat(a->format), w, h, AV_PIX_FMT_RGBA, SWS_BILINEAR, nullptr,
+                                   nullptr, nullptr);
+  if (!sws) return out;
+  out.resize(size_t(w) * h * 4);
+  uint8_t* dst[1] = {out.data()};
+  int stride[1] = {w * 4};
+  sws_scale(sws, a->data, a->linesize, 0, a->height, dst, stride);
+  sws_freeContext(sws);
+  return out;
+}
+
+std::vector<float> waveform(const std::string& path, int bins) {
+  std::vector<float> out;
+  AudioDecoder d;
+  if (!d.open(path, 8000, 2).empty()) return out;
+  const int per = std::max(1, 8000 / bins);
+  std::vector<float> buf(size_t(per) * 2 * 100);
+  for (int64_t at = 0; at < d.lengthSamples(); at += per * 100) {
+    int n = int(std::min<int64_t>(per * 100, d.lengthSamples() - at));
+    d.read(at, buf.data(), n);
+    for (int b = 0; b * per < n; ++b) {
+      float pk = 0;
+      for (int i = b * per; i < std::min(n, (b + 1) * per); ++i) pk = std::max({pk, std::fabs(buf[size_t(i) * 2]), std::fabs(buf[size_t(i) * 2 + 1])});
+      out.push_back(std::min(1.f, pk));
+    }
+  }
+  return out;
 }
 
 // ——— sync by sound ———

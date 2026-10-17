@@ -64,6 +64,12 @@ int applyReframe(Project& p, const std::string& seqId, const std::string& clipId
 std::string reframedCopy(Project& p, const std::string& seqId, int width, int height,
                          const std::map<std::string, std::vector<ReframeKey>>& subjects);
 
+/** a small RGBA picture of a media item at time t (width w, height kept in proportion); empty on failure */
+std::vector<uint8_t> thumbnail(const std::string& path, Tick t, int w, int& h);
+
+/** peak envelope of a media item's sound: one value (0..1, max of channels) per 10 ms */
+std::vector<float> waveform(const std::string& path, int binsPerSecond = 100);
+
 /**
  * Sync by sound: how far into each file the moment the first file starts
  * happens (positive) or how long before it (negative), from the correlation

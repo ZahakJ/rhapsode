@@ -78,6 +78,7 @@ App::App(SDL_Window* w, gfx::Gpu& gpu)
 App::~App() {
   for (auto* t : {&work_, &view_, &scopeSrc_, &waveTex_, &vecTex_, &paradeTex_}) gpu_.release(*t);
   for (auto& t : angleWork_) gpu_.release(t);
+  for (auto& [k, t] : thumbs_) gpu_.release(t->tex);
   for (auto& t : angleView_) gpu_.release(t);
 }
 
@@ -715,7 +716,63 @@ void App::timeline() {
       std::string name = c.kind == ClipKind::Title ? "T  " + c.text.substr(0, c.text.find('\n')) : c.name;
       if (c.speed != 1) name += "  " + std::to_string(int(std::lround(c.speed * 100))) + "%";
       dl->PushClipRect(ImVec2(std::max(cx0, x0), ry), ImVec2(cx1, ry + r.h), true);
+      // a picture of the clip at its head
+      if (r.ref.kind == TrackKind::Video && c.kind == ClipKind::Media && cx1 - cx0 > 70) {
+        if (const Media* m = s_.project.findMedia(c.ref); m && m->hasVideo) {
+          auto it = thumbs_.find(m->path);
+          if (it == thumbs_.end() && !thumbsPending_.count(m->path)) {
+            thumbsPending_.insert(m->path);
+            auto px = std::make_shared<std::vector<uint8_t>>();
+            auto hh = std::make_shared<int>(0);
+            std::string path = m->path;
+            Tick at = m->kind == MediaKind::Image ? 0 : std::min<Tick>(m->duration / 10, kFlicks);
+            task("thumbnail", [px, hh, path, at] { *px = ai::thumbnail(path, at, 160, *hh); return std::string(); },
+                 [this, px, hh, path] {
+                   thumbsPending_.erase(path);
+                   if (px->empty()) return;
+                   auto t = std::make_unique<Thumb>();
+                   t->tex = gpu_.make(160, *hh, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_SAMPLER);
+                   SDL_GPUCommandBuffer* up = SDL_AcquireGPUCommandBuffer(gpu_.device());
+                   gpu_.beginUploads(up);
+                   gpu_.upload(t->tex, px->data(), 640, 640, *hh);
+                   gpu_.endUploads();
+                   SDL_SubmitGPUCommandBuffer(up);
+                   t->bind = {t->tex.tex, gpu_.linear()};
+                   thumbs_[path] = std::move(t);
+                 });
+          } else if (it != thumbs_.end()) {
+            float th = r.h - 6, tw = th * float(it->second->tex.w) / float(std::max(1, it->second->tex.h));
+            dl->AddImage(ImTextureID(&it->second->bind), ImVec2(cx0 + 2, ry + 3), ImVec2(cx0 + 2 + tw, ry + 3 + th));
+          }
+        }
+      }
+      dl->AddText(ImVec2(std::max(cx0, x0) + 5, ry + 6), IM_COL32(0, 0, 0, 200), name.c_str());  // a shadow, over pictures
       dl->AddText(ImVec2(std::max(cx0, x0) + 4, ry + 5), IM_COL32(240, 240, 245, 255), name.c_str());
+      // the sound's waveform (made once per media, in the background)
+      if (r.ref.kind == TrackKind::Audio && c.kind == ClipKind::Media) {
+        if (const Media* m = s_.project.findMedia(c.ref); m && m->hasAudio) {
+          auto it = waves_.find(m->path);
+          if (it == waves_.end() && !wavesPending_.count(m->path)) {
+            wavesPending_.insert(m->path);
+            auto w = std::make_shared<std::vector<float>>();
+            std::string path = m->path;
+            task("waveform", [w, path] { *w = ai::waveform(path); return std::string(); }, [this, w, path] {
+              waves_[path] = w;
+              wavesPending_.erase(path);
+            });
+          } else if (it != waves_.end() && !it->second->empty()) {
+            const auto& wv = *it->second;
+            float mid = ry + r.h / 2;
+            for (float px = std::max(cx0, x0); px < cx1; px += 1) {
+              double src = toSeconds(c.sourceAt(tOf(px)));
+              size_t bin = size_t(std::max(0.0, src * 100));
+              if (bin >= wv.size()) continue;
+              float a = wv[bin] * (r.h / 2 - 3) * float(audio::fromDb(c.gain.at(tOf(px) - c.start)));
+              dl->AddLine(ImVec2(px, mid - a), ImVec2(px, mid + a), IM_COL32(170, 235, 200, 150));
+            }
+          }
+        }
+      }
       // gain line on sound clips
       if (r.ref.kind == TrackKind::Audio && c.gain.animated()) {
         for (float px = std::max(cx0, x0); px < cx1; px += 3) {
