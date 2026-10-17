@@ -4,6 +4,7 @@
 // as ffmpeg children. One job at a time per lane; progress parsed from stderr.
 
 #include <atomic>
+#include <functional>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -14,7 +15,7 @@
 namespace rhap::app {
 
 struct Job {
-  enum class Kind { Export, Proxy } kind = Kind::Export;
+  enum class Kind { Export, Proxy, Task } kind = Kind::Export;
   enum class State { Queued, Running, Done, Failed, Cancelled } state = State::Queued;
   std::string title, output, error;
   std::vector<std::string> argv;
@@ -23,6 +24,9 @@ struct Job {
   double duration = 0;  // seconds, for ffmpeg's out_time progress
   std::string mediaId;  // proxies: whose proxy this is
   int pid = 0;
+  /** Task jobs: work runs on the task thread; apply runs on the UI thread after it succeeds */
+  std::function<std::string()> work;
+  std::function<void()> apply;
 };
 
 class JobQueue {
@@ -35,6 +39,8 @@ class JobQueue {
   std::vector<Job> snapshot();
   /** finished proxy jobs not yet collected: (media id, proxy path) */
   std::vector<std::pair<std::string, std::string>> takeProxies();
+  /** finished tasks' apply steps, to run on the UI thread */
+  std::vector<std::function<void()>> takeApplies();
   void clearFinished();
 
  private:
@@ -43,7 +49,8 @@ class JobQueue {
   std::deque<std::shared_ptr<Job>> jobs_;
   std::vector<std::pair<std::string, std::string>> proxies_;
   std::atomic<bool> stop_{false};
-  std::thread exportThread_, proxyThread_;
+  std::vector<std::function<void()>> applies_;
+  std::thread exportThread_, proxyThread_, taskThread_;
 };
 
 /** where rpro lives: next to the running editor */
