@@ -55,4 +55,12 @@ std::vector<ReframeKey> trackSubject(const std::string& path, double perSecond =
  */
 int applyReframe(Project& p, const std::string& seqId, const std::string& clipId, const std::vector<ReframeKey>& keys);
 
+/**
+ * Sync by sound: how far into each file the moment the first file starts
+ * happens (positive) or how long before it (negative), from the correlation
+ * of their sound — coarse on a 200 Hz onset envelope, then to the sample.
+ * offsets[0] is 0. `maxLag` bounds the search.
+ */
+std::vector<Tick> syncByAudio(const std::vector<std::string>& paths, Tick maxLag = 120 * kFlicks, std::string* err = nullptr);
+
 }  // namespace rhap::ai

@@ -278,4 +278,121 @@ int applyReframe(Project& p, const std::string& seqId, const std::string& clipId
   return n;
 }
 
+// ——— sync by sound ———
+
+namespace {
+
+/** mono samples at `rate` */
+std::vector<float> monoAt(const std::string& path, int rate, int64_t maxSamples) {
+  AudioDecoder d;
+  std::vector<float> out;
+  if (!d.open(path, rate, 1).empty()) return out;
+  int64_t n = std::min(d.lengthSamples(), maxSamples);
+  out.resize(size_t(std::max<int64_t>(0, n)));
+  for (int64_t at = 0; at < n; at += 65536) d.read(at, out.data() + at, int(std::min<int64_t>(65536, n - at)));
+  return out;
+}
+
+/** a 200 Hz onset envelope: the rise of a 5 ms RMS, so steady hum and level differences do not matter */
+std::vector<float> onsets(const std::vector<float>& x, int rate) {
+  const int win = rate / 200;
+  std::vector<float> e;
+  for (size_t i = 0; i + size_t(win) <= x.size(); i += size_t(win)) {
+    double s = 0;
+    for (int k = 0; k < win; ++k) s += double(x[i + size_t(k)]) * x[i + size_t(k)];
+    e.push_back(float(std::log1p(1000 * std::sqrt(s / win))));
+  }
+  std::vector<float> d(e.size(), 0.f);
+  for (size_t i = 1; i < e.size(); ++i) d[i] = std::max(0.f, e[i] - e[i - 1]);
+  double mean = 0;
+  for (float v : d) mean += v;
+  mean /= std::max<size_t>(1, d.size());
+  for (float& v : d) v = float(v - mean);
+  return d;
+}
+
+/** the lag of b against a (b[i + lag] ≈ a[i]) in [-maxLag, maxLag] maximising the normalised correlation */
+int64_t bestLag(const std::vector<float>& a, const std::vector<float>& b, int64_t lo, int64_t hi, double* score = nullptr) {
+  int64_t best = 0;
+  double bestC = -1e300;
+  for (int64_t lag = lo; lag <= hi; ++lag) {
+    double c = 0, na = 0, nb = 0;
+    int64_t i0 = std::max<int64_t>(0, -lag), i1 = std::min<int64_t>(int64_t(a.size()), int64_t(b.size()) - lag);
+    for (int64_t i = i0; i < i1; ++i) {
+      double x = a[size_t(i)], y = b[size_t(i + lag)];
+      c += x * y;
+      na += x * x;
+      nb += y * y;
+    }
+    if (na <= 0 || nb <= 0) continue;
+    c /= std::sqrt(na * nb);
+    if (c > bestC) bestC = c, best = lag;
+  }
+  if (score) *score = bestC;
+  return best;
+}
+
+}  // namespace
+
+std::vector<Tick> syncByAudio(const std::vector<std::string>& paths, Tick maxLag, std::string* err) {
+  std::vector<Tick> out(paths.size(), 0);
+  if (paths.size() < 2) return out;
+  const int coarseRate = 8000, fine = 48000;
+  const int64_t limit = int64_t(20 * 60) * coarseRate;
+  auto a = monoAt(paths[0], coarseRate, limit);
+  if (a.empty()) {
+    if (err) *err = paths[0] + " has no sound to sync by";
+    return out;
+  }
+  auto ea = onsets(a, coarseRate);
+  // the reference stretch: the 3 minutes of A with the most going on (all of it when shorter)
+  const size_t win = std::min<size_t>(ea.size(), 200 * 180);
+  size_t at = 0;
+  if (ea.size() > win) {
+    double best = -1, run = 0;
+    for (size_t i = 0; i < ea.size(); ++i) {
+      run += std::max(0.f, ea[i]);
+      if (i >= win) run -= std::max(0.f, ea[i - win]);
+      if (i + 1 >= win && run > best) best = run, at = i + 1 - win;
+    }
+  }
+  std::vector<float> ref(ea.begin() + long(at), ea.begin() + long(at + win));
+  // where in A the waveform is busiest, 4 s of it, for the fine pass
+  size_t busy = at, busyLen = 200 * 4;
+  {
+    double best = -1, run = 0;
+    for (size_t i = at; i < at + win; ++i) {
+      run += std::max(0.f, ea[i]);
+      if (i >= at + busyLen) run -= std::max(0.f, ea[i - busyLen]);
+      if (i + 1 >= at + busyLen && run > best) best = run, busy = i + 1 - busyLen;
+    }
+  }
+  AudioDecoder da;
+  da.open(paths[0], fine, 1);
+  const int64_t aFine = int64_t(busy) * (fine / 200), nFine = int64_t(fine) * 4;
+  std::vector<float> wa(static_cast<size_t>(nFine));
+  da.read(aFine, wa.data(), int(nFine));
+  const int64_t maxE = sampleAt(maxLag, 200);
+  for (size_t k = 1; k < paths.size(); ++k) {
+    auto b = monoAt(paths[k], coarseRate, limit);
+    if (b.empty()) {
+      if (err) *err = paths[k] + " has no sound to sync by";
+      continue;
+    }
+    auto eb = onsets(b, coarseRate);
+    // b[j] ≈ ref[i] at j = i + at + lagE
+    int64_t lagE = bestLag(ref, std::vector<float>(eb.begin(), eb.end()), int64_t(at) * 0 - maxE + int64_t(at), maxE + int64_t(at)) - int64_t(at);
+    // the fine pass: ±10 ms around it, sample by sample
+    AudioDecoder db;
+    db.open(paths[k], fine, 1);
+    const int64_t pad = fine / 100;
+    int64_t bFrom = aFine + lagE * (fine / 200) - pad;
+    std::vector<float> wb(size_t(nFine + 2 * pad));
+    db.read(bFrom, wb.data(), int(wb.size()));
+    int64_t f = bestLag(wa, wb, 0, 2 * pad);
+    out[k] = sampleStart(bFrom + f - aFine, fine);
+  }
+  return out;
+}
+
 }  // namespace rhap::ai

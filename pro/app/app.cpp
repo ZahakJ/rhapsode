@@ -822,6 +822,41 @@ void App::bin() {
   ImGui::SameLine();
   if (ImGui::Button("Make proxies")) makeProxies();
   ImGui::SameLine();
+  ImGui::BeginDisabled(binPicked_.size() < 2);
+  if (ImGui::Button("Multicam (sync by sound)")) {
+    std::vector<std::string> ids(binPicked_.begin(), binPicked_.end()), paths;
+    for (auto& id : ids)
+      if (const Media* m = s_.project.findMedia(id)) paths.push_back(m->path);
+    auto off = std::make_shared<std::vector<Tick>>();
+    auto err = std::make_shared<std::string>();
+    task("sync " + std::to_string(ids.size()) + " angles", [paths, off, err] {
+      *off = ai::syncByAudio(paths, 120 * kFlicks, err.get());
+      return *err;
+    }, [this, ids, off] {
+      std::string seqId = s_.seq()->id;
+      s_.apply("multicam", [&](Editor& ed) -> Err {
+        std::string mc = makeMulticam(s_.project, "Multicam " + std::to_string(s_.project.sequences.size()), ids, *off);
+        const Sequence* m = s_.project.findSequence(mc);
+        Clip v;
+        v.id = s_.project.makeId("c");
+        v.kind = ClipKind::Multicam;
+        v.ref = mc;
+        v.name = m->name;
+        v.start = s_.playhead;
+        v.dur = m->duration();
+        Clip a = v;
+        a.id = s_.project.makeId("c");
+        a.kind = ClipKind::Nested;  // every angle's sound, mixed; cut the picture with 1–9
+        v.link = a.link = s_.project.makeId("l");
+        (void)seqId;
+        if (Err e = ed.overwrite(s_.targetVideo, v); !e.empty()) return e;
+        return ed.overwrite(s_.targetAudio, a);
+      });
+      binPicked_.clear();
+    });
+  }
+  ImGui::EndDisabled();
+  ImGui::SameLine();
   ImGui::BeginDisabled(selectedMedia_.empty());
   if (ImGui::Button("Insert ,")) s_.placeMedia(selectedMedia_, true);
   ImGui::SameLine();
@@ -837,8 +872,16 @@ void App::bin() {
     for (auto& m : s_.project.media) {
       ImGui::TableNextRow();
       ImGui::TableNextColumn();
-      bool sel = selectedMedia_ == m.id;
-      if (ImGui::Selectable(m.name.c_str(), sel, ImGuiSelectableFlags_SpanAllColumns)) selectedMedia_ = m.id;
+      bool sel = selectedMedia_ == m.id || binPicked_.count(m.id);
+      if (ImGui::Selectable(m.name.c_str(), sel, ImGuiSelectableFlags_SpanAllColumns)) {
+        if (ImGui::GetIO().KeyCtrl) {
+          if (!binPicked_.erase(m.id)) binPicked_.insert(m.id);
+          if (!selectedMedia_.empty()) binPicked_.insert(selectedMedia_);
+        } else {
+          binPicked_.clear();
+        }
+        selectedMedia_ = m.id;
+      }
       if (ImGui::BeginDragDropSource()) {
         ImGui::SetDragDropPayload("RHAP_MEDIA", m.id.data(), m.id.size());
         ImGui::Text("%s", m.name.c_str());

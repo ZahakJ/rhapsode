@@ -101,3 +101,19 @@ TEST_CASE("auto-reframe follows a moving subject into a vertical frame") {
   CHECK(r.xf.scale.value == doctest::Approx((1920.0 / 360) / (1080.0 / 640)));
   CHECK(r.xf.x.at(sec(0.4)) > r.xf.x.at(sec(1.2)));  // the subject moves right, so the picture slides left
 }
+
+TEST_CASE("multicam: angles synced by their sound, to the sample") {
+  // one room, three recorders started at different moments, at different levels, each with its own hiss
+  std::string room = make("room.wav", "-f lavfi -i \"aevalsrc='0.3*sin(2*PI*(200+150*sin(2*PI*0.7*t))*t)*(0.5+0.5*sin(2*PI*1.3*t))*gt(sin(2*PI*0.9*t),-0.3)':s=48000:d=30\" -c:a pcm_f32le");
+  REQUIRE(!room.empty());
+  // B starts 1.234 s into the room, C 2.5 s before A (it has 2.5 s A never heard)
+  std::string b = make("angleB.wav", "-i '" + room + "' -af \"atrim=start=1.234,asetpts=PTS-STARTPTS,volume=0.4,aeval='val(0)+0.01*(random(0)-0.5)'\" -c:a pcm_f32le");
+  std::string c = make("angleC.wav", "-f lavfi -i anoisesrc=d=2.5:a=0.02:r=48000 -i '" + room + "' -filter_complex \"[0][1]concat=n=2:v=0:a=1,volume=1.5\" -c:a pcm_f32le");
+  REQUIRE(!b.empty());
+  REQUIRE(!c.empty());
+  std::string err;
+  auto off = ai::syncByAudio({room, b, c}, 10 * kFlicks, &err);
+  REQUIRE_MESSAGE(err.empty(), err);
+  CHECK_MESSAGE(std::llabs(sampleAt(off[1], 48000) - sampleAt(-fromSeconds(1.234), 48000)) <= 1, "B " << toSeconds(off[1]));
+  CHECK_MESSAGE(std::llabs(sampleAt(off[2], 48000) - sampleAt(fromSeconds(2.5), 48000)) <= 1, "C " << toSeconds(off[2]));
+}
