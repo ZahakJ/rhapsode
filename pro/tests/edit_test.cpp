@@ -281,3 +281,26 @@ TEST_CASE("property: 100 000 random edits never break an invariant") {
   std::string a = serialize(p);
   CHECK(serialize(deserialize(a)) == a);
 }
+
+#include "model/templates.h"
+
+TEST_CASE("templates: graphics land above the footage they cover and animate") {
+  Project p = fx::project(1, 1);
+  Editor ed(p, "main");
+  REQUIRE(ed.overwrite(V1, mk(p, "cam", 0, 10)).empty());
+  Clip lt = makeTitle(p, p.sequences[0], "Lower third", sec(2));
+  REQUIRE(placeGraphic(p, "main", lt).empty());
+  REQUIRE(p.sequences[0].video.size() == 2);  // a track was added, nothing was cut
+  CHECK(p.sequences[0].video[0].clips.size() == 1);
+  const Clip& t = p.sequences[0].video[1].clips[0];
+  CHECK(t.xf.x.at(0) < t.xf.x.at(sec(0.5)));       // slides in from the left
+  CHECK(t.xf.opacity.at(0) == 0);
+  CHECK(t.xf.opacity.at(sec(2)) == 1);
+  Clip again = makeTitle(p, p.sequences[0], "Subtitle", sec(3));
+  REQUIRE(placeGraphic(p, "main", again).empty());
+  CHECK(p.sequences[0].video.size() == 3);  // over the lower third, not on it
+  Clip later = makeShape(p, p.sequences[0], ClipKind::Shape, ShapeKind::Ellipse, sec(20));
+  REQUIRE(placeGraphic(p, "main", later).empty());
+  CHECK(p.sequences[0].video[0].clips.size() == 2);  // nothing under it: the first free track
+  CHECK(check(p).empty());
+}

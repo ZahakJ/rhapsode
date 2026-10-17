@@ -4,4 +4,12 @@
 14 move 360 740
 16 up 360 740
 20 key M
-24 save @OUT@
+22 move 400 598
+23 down 400 598
+24 up 400 598
+28 move 809 283
+29 down 809 283
+31 move 840 283
+33 move 869 283
+35 up 869 283
+40 save @OUT@

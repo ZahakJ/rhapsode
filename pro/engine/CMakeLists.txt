@@ -1,6 +1,6 @@
 add_library(rhap STATIC
   ticks.cpp
-  model/model.cpp model/edit.cpp
+  model/model.cpp model/edit.cpp model/templates.cpp
   io/project_io.cpp
   media/decode.cpp media/prefetch.cpp
   gfx/color.cpp gfx/gpu.cpp gfx/text.cpp

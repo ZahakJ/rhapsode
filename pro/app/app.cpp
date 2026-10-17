@@ -13,6 +13,7 @@
 #include "engine/audio/mixer.h"
 #include "engine/interchange/interchange.h"
 #include "engine/io/project_io.h"
+#include "engine/model/templates.h"
 #include "engine/net/web.h"
 #include <fstream>
 #include <nlohmann/json.hpp>
@@ -292,20 +293,27 @@ void App::menu() {
   if (ImGui::BeginMenu("Sequence")) {
     if (ImGui::MenuItem("Add video track")) s_.apply("add track", [](Editor& ed) { return ed.addTrack(TrackKind::Video); });
     if (ImGui::MenuItem("Add audio track")) s_.apply("add track", [](Editor& ed) { return ed.addTrack(TrackKind::Audio); });
-    if (ImGui::MenuItem("Add title at playhead")) {
-      s_.apply("title", [&](Editor& ed) -> Err {
-        Clip c;
-        c.id = s_.project.makeId("c");
-        c.kind = ClipKind::Title;
-        c.name = "Title";
-        c.text = "Title";
-        c.start = s_.playhead;
-        c.dur = 5 * kFlicks;
-        c.style.size = ed.seq().height * 0.08;
-        c.style.outlineWidth = c.style.size * 0.06;
-        int top = int(ed.seq().video.size()) - 1;
-        return ed.overwrite({TrackKind::Video, top}, c);
-      });
+    if (ImGui::BeginMenu("Add title")) {
+      for (auto& t : titleTemplates())
+        if (ImGui::MenuItem(t.c_str())) {
+          std::string seqId = s_.seq()->id;
+          Clip c = makeTitle(s_.project, *s_.seq(), t, s_.playhead);
+          s_.apply("add " + t, [&](Editor&) { return placeGraphic(s_.project, seqId, c); });
+          s_.selection = {c.id};
+        }
+      ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("Add shape")) {
+      auto add = [&](ClipKind k, ShapeKind sh) {
+        std::string seqId = s_.seq()->id;
+        Clip c = makeShape(s_.project, *s_.seq(), k, sh, s_.playhead);
+        s_.apply("add shape", [&](Editor&) { return placeGraphic(s_.project, seqId, c); });
+        s_.selection = {c.id};
+      };
+      if (ImGui::MenuItem("Rectangle")) add(ClipKind::Shape, ShapeKind::Rect);
+      if (ImGui::MenuItem("Ellipse")) add(ClipKind::Shape, ShapeKind::Ellipse);
+      if (ImGui::MenuItem("Solid colour")) add(ClipKind::Solid, ShapeKind::Rect);
+      ImGui::EndMenu();
     }
     if (ImGui::MenuItem("Normalise loudness to −14 LUFS")) {
       double now = audio::measureLoudness(s_.project, *s_.seq());
@@ -382,7 +390,10 @@ void App::viewer(SDL_GPUCommandBuffer* cmd) {
     viewBind_ = {view_.tex, gpu_.linear()};
     ImVec2 cur = ImGui::GetCursorPos();
     ImGui::SetCursorPos(ImVec2(cur.x + (avail.x - w) / 2, cur.y + (avail.y - h) / 2));
+    ImVec2 imgPos = ImGui::GetCursorScreenPos();
     ImGui::Image(ImTextureID(&viewBind_), ImVec2(w, h));
+    bool imgHovered = ImGui::IsItemHovered();
+    gizmo(imgPos, w, h, imgHovered);
     ImGui::SetCursorPos(ImVec2(cur.x, cur.y + avail.y + 4));
     ImGui::Text("%s", tc(s_, s_.playhead).c_str());
     ImGui::SameLine();
@@ -405,6 +416,95 @@ void App::viewer(SDL_GPUCommandBuffer* cmd) {
                           s_.markOut >= 0 ? tc(s_, s_.markOut).c_str() : "--");
   }
   ImGui::End();
+}
+
+// ——— the transform gizmo on the viewer ———
+
+void App::gizmo(ImVec2 p0, float w, float h, bool hovered) {
+  Sequence* s = s_.seq();
+  if (!s || s_.selection.empty()) return;
+  Clip* c = clipById(*s, *s_.selection.begin());
+  ClipLoc loc = c ? findClip(*s, c->id) : ClipLoc{};
+  if (!c || loc.track.kind != TrackKind::Video) return;
+  if (s_.playhead < c->start || s_.playhead >= c->end()) return;
+  const double W = s->width, H = s->height;
+  double sw = W, sh = H;
+  bool fit = false;
+  if (c->kind == ClipKind::Media) {
+    const Media* m = s_.project.findMedia(c->ref);
+    if (!m || !m->hasVideo) return;
+    sw = m->width;
+    sh = m->height;
+    fit = true;
+  } else if (c->kind == ClipKind::Nested || c->kind == ClipKind::Multicam) {
+    if (const Sequence* n = s_.project.findSequence(c->ref)) sw = n->width, sh = n->height, fit = true;
+  } else if (c->kind == ClipKind::Title) {
+    sw = std::max(40.0, c->style.size * 0.55 * double(c->text.size()));  // an estimate: the box follows the text
+    sh = c->style.size * 1.3;
+  }
+  auto toScreen = [&](double nx, double ny) { return ImVec2(p0.x + float((nx + 1) / 2 * w), p0.y + float((1 - ny) / 2 * h)); };
+  auto layerAt = [&](Tick t) {
+    LayerDraw l;
+    l.clip = c;
+    Tick local = t - c->start;
+    const Transform& x = c->xf;
+    l.x = x.x.at(local), l.y = x.y.at(local), l.scale = x.scale.at(local), l.scaleY = x.scaleY.at(local);
+    l.rotation = x.rotation.at(local), l.anchorX = x.anchorX.at(local), l.anchorY = x.anchorY.at(local);
+    l.cropL = x.cropL.at(local), l.cropR = x.cropR.at(local), l.cropT = x.cropT.at(local), l.cropB = x.cropB.at(local);
+    return l;
+  };
+  Quad q = place(layerAt(s_.playhead), sw, sh, s->width, s->height, fit);
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  ImVec2 cs[4];
+  for (int i = 0; i < 4; ++i) cs[i] = toScreen(q.ndc[size_t(i * 2)], q.ndc[size_t(i * 2 + 1)]);
+  dl->AddQuad(cs[0], cs[1], cs[3], cs[2], IM_COL32(255, 122, 89, 220), 1.5f);
+  // the motion path: where the centre goes over the clip, with a dot on each position key
+  if (c->xf.x.animated() || c->xf.y.animated()) {
+    std::vector<ImVec2> pts;
+    for (Tick t = c->start; t <= c->end(); t += kFlicks / 15) {
+      LayerDraw l = layerAt(t);
+      pts.push_back(toScreen(l.x / (W / 2), -l.y / (H / 2)));
+    }
+    dl->AddPolyline(pts.data(), int(pts.size()), IM_COL32(255, 210, 120, 200), 0, 1.5f);
+    std::set<Tick> keys;
+    for (auto& k : c->xf.x.keys) keys.insert(k.t);
+    for (auto& k : c->xf.y.keys) keys.insert(k.t);
+    for (Tick k : keys) {
+      LayerDraw l = layerAt(c->start + k);
+      dl->AddCircleFilled(toScreen(l.x / (W / 2), -l.y / (H / 2)), 4, IM_COL32(255, 210, 120, 255));
+    }
+  }
+  ImVec2 centre = toScreen(q.ndc[0] * 0 + layerAt(s_.playhead).x / (W / 2), -layerAt(s_.playhead).y / (H / 2));
+  dl->AddLine(ImVec2(centre.x - 6, centre.y), ImVec2(centre.x + 6, centre.y), IM_COL32(255, 122, 89, 255));
+  dl->AddLine(ImVec2(centre.x, centre.y - 6), ImVec2(centre.x, centre.y + 6), IM_COL32(255, 122, 89, 255));
+  // drag inside the box to move the picture (a key at the playhead when position is animated)
+  ImVec2 m = ImGui::GetIO().MousePos;
+  auto inside = [&](ImVec2 pt) {
+    auto cross = [](ImVec2 a, ImVec2 b, ImVec2 p) { return (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x); };
+    float d1 = cross(cs[0], cs[1], pt), d2 = cross(cs[1], cs[3], pt), d3 = cross(cs[3], cs[2], pt), d4 = cross(cs[2], cs[0], pt);
+    return (d1 >= 0 && d2 >= 0 && d3 >= 0 && d4 >= 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0 && d4 <= 0);
+  };
+  Tick local = s_.playhead - c->start;
+  if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && inside(m)) {
+    gizmoDrag_ = true;
+    gizmoGrab_ = m;
+    gizmoX_ = c->xf.x.at(local);
+    gizmoY_ = c->xf.y.at(local);
+  }
+  if (gizmoDrag_ && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+    double nx = gizmoX_ + (m.x - gizmoGrab_.x) * W / w, ny = gizmoY_ + (m.y - gizmoGrab_.y) * H / h;
+    editClip("move picture", [&](Clip& k) {
+      if (k.xf.x.animated()) k.xf.x.setKey(local, nx, Ease::InOut);
+      else k.xf.x.value = nx;
+      if (k.xf.y.animated()) k.xf.y.setKey(local, ny, Ease::InOut);
+      else k.xf.y.value = ny;
+    });
+    editing_ = true;
+  }
+  if (gizmoDrag_ && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+    gizmoDrag_ = false;
+    editing_ = false;
+  }
 }
 
 // ——— timeline ———
