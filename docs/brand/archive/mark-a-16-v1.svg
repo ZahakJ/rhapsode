@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Rhapsode mark A, 16 px variant (v1, superseded): "Threaded Wave" on a 32-unit pixel grid, eye dropped, strokes 2 px -->
+  <rect width="512" height="512" rx="96" fill="#0b0d12"/>
+  <path fill="#e8eaf0" d="M256 480 L224 352 L224 64 H288 V352 Z"/>
+  <path d="M48 256 C 72 340, 88 384, 112 384 C 168 384, 200 192, 256 192 C 312 192, 344 384, 400 384 C 424 384, 440 340, 464 256" fill="none" stroke="#ff9f43" stroke-width="64" stroke-linecap="round"/>
+</svg>

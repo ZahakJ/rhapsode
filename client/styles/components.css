@@ -49,11 +49,9 @@
 .ms-hud__mark:hover {
   text-decoration: none;
 }
-.rh-rec {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--ice);
+.rh-mark {
+  width: 18px;
+  height: 18px;
   flex: none;
 }
 .ms-hud__app {

@@ -48,7 +48,11 @@ export function App() {
     <div className={`ms-hud${route.view === "studio" ? " ms-hud--studio" : ""}`}>
       <header className="ms-hud__titlebar">
         <a className="ms-hud__mark" href="#/" onClick={() => navigate("#/")} aria-label="Rhapsode home">
-          <span className="rh-rec" aria-hidden="true" />
+          <svg className="rh-mark" viewBox="0 0 512 512" aria-hidden="true">
+            <path d="M96 96V192C96 304 144 352 224 352C304 352 352 304 352 192V128" fill="none" stroke="var(--accent)" strokeWidth="64" />
+            <path d="M352 112C352 64 432 64 432 112V320" fill="none" stroke="var(--accent)" strokeWidth="32" />
+            <path d="M224 32L256 128V448H192V128Z" fill="var(--text-1)" />
+          </svg>
           <span className="ms-hud__app">RHAPSODE</span>
           <span className="ms-hud__sub">the cutting room</span>
         </a>

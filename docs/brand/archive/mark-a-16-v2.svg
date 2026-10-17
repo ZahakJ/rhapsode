@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Rhapsode mark A, 16 px variant (v2, superseded): "Needle Psi" on a 32-unit pixel grid - one clean 2 px stem, 2 px cup, no eye -->
+  <rect width="512" height="512" rx="96" fill="#0b0d12"/>
+  <path d="M96 96 V192 C 96 304, 160 352, 256 352 C 352 352, 416 304, 416 192 V96" fill="none" stroke="#ff9f43" stroke-width="64" stroke-linecap="square"/>
+  <path fill="#e8eaf0" d="M256 32 L288 128 V448 H224 V128 Z"/>
+</svg>

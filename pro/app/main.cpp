@@ -21,8 +21,12 @@
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_PNG
+#include <stb_image.h>
 
 #include "app.h"
+#include "icon.h"
 #include "engine/gfx/text.h"
 
 namespace {
@@ -200,6 +204,17 @@ int main(int argc, char** argv) {
   if (!win) {
     std::fprintf(stderr, "rhapsode-pro: %s\n", SDL_GetError());
     return 1;
+  }
+  {
+    using rhap::app::embedded::app_icon;
+    int iw = 0, ih = 0, n = 0;
+    if (unsigned char* px = stbi_load_from_memory(app_icon.data, int(app_icon.size), &iw, &ih, &n, 4)) {
+      if (SDL_Surface* icon = SDL_CreateSurfaceFrom(iw, ih, SDL_PIXELFORMAT_RGBA32, px, iw * 4)) {
+        SDL_SetWindowIcon(win, icon);
+        SDL_DestroySurface(icon);
+      }
+      stbi_image_free(px);
+    }
   }
   rhap::gfx::Gpu gpu;
   std::string gerr = gpu.init(shot.empty() ? win : nullptr);

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Rhapsode mark, "Needle Psi" - the psi of rhapsoidos: a needle is the stem, the thread through its eye is the cup, and its loose end trails past one arm -->
+  <rect width="512" height="512" rx="96" fill="#0b0d12"/>
+  <g fill="none" stroke="#ff9f43" stroke-linecap="round">
+    <path d="M380 110 C 380 44, 456 44, 456 112 C 456 190, 428 250, 452 330" stroke-width="34"/>
+    <path d="M92 96 C 92 290, 152 352, 236 352 C 320 352, 380 290, 380 104" stroke-width="56"/>
+  </g>
+  <path fill-rule="evenodd" fill="#e8eaf0" d="M236 28 L272 150 L272 428 A36 36 0 0 1 200 428 L200 150 Z M224 304 L224 396 A12 12 0 0 0 248 396 L248 304 A12 12 0 0 0 224 304 Z"/>
+</svg>

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Rhapsode mark B: "Splice Stitch" - a cut film strip sewn back together across the splice -->
+  <rect width="512" height="512" rx="96" fill="#0b0d12"/>
+  <path fill-rule="evenodd" fill="#e8eaf0" d="M72 128 H230 V384 H72 A32 32 0 0 1 40 352 V160 A32 32 0 0 1 72 128 Z M72 148 h44 v40 h-44 Z M154 148 h44 v40 h-44 Z M72 324 h44 v40 h-44 Z M154 324 h44 v40 h-44 Z"/>
+  <path fill-rule="evenodd" fill="#e8eaf0" d="M282 128 H440 A32 32 0 0 1 472 160 V352 A32 32 0 0 1 440 384 H282 Z M314 148 h44 v40 h-44 Z M396 148 h44 v40 h-44 Z M314 324 h44 v40 h-44 Z M396 324 h44 v40 h-44 Z"/>
+  <path d="M206 232 L306 200 M206 272 L306 240 M206 312 L306 280" fill="none" stroke="#ff9f43" stroke-width="28" stroke-linecap="round"/>
+</svg>

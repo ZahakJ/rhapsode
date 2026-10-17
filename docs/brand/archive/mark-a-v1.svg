@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Rhapsode mark A (v1, superseded): "Threaded Wave" - a sound wave threaded through the eye of a needle -->
+  <rect width="512" height="512" rx="96" fill="#0b0d12"/>
+  <path d="M40 290 C 70 380, 90 400, 112 400 C 170 400, 200 180, 256 180 C 312 180, 342 400, 400 400 C 422 400, 442 380, 472 290" fill="none" stroke="#ff9f43" stroke-width="48" stroke-linecap="round"/>
+  <path fill-rule="evenodd" fill="#e8eaf0" d="M256 488 L212 300 L212 96 A44 44 0 0 1 300 96 L300 300 Z M244 110 L244 240 A12 12 0 0 0 268 240 L268 110 A12 12 0 0 0 244 110 Z"/>
+</svg>

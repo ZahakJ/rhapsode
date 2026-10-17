@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Rhapsode mark C, 16 px variant (v2): "Needle Rho" - eye dropped, heavier strokes, thread tail kept as the anti-P cue -->
+  <rect width="512" height="512" rx="96" fill="#0b0d12"/>
+  <g transform="translate(-22 10)">
+  <g fill="none" stroke="#ff9f43" stroke-linecap="round">
+    <path d="M216 144 A124 124 0 1 1 215 270" stroke-width="72"/>
+    <path d="M216 144 C 184 124, 150 112, 108 66" stroke-width="56"/>
+  </g>
+  <path transform="rotate(12 180 280)" fill="#e8eaf0" d="M136 110 A44 44 0 0 1 224 110 L224 400 L180 500 L136 400 Z"/>
+  </g>
+</svg>

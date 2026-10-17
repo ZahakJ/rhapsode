@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Rhapsode mark C (v1, superseded): "Needle Rho" - a needle is the stem of a Greek rho, its thread the bowl -->
+  <rect width="512" height="512" rx="96" fill="#0b0d12"/>
+  <path d="M190 132 A 124 124 0 1 1 190 336" fill="none" stroke="#ff9f43" stroke-width="56" stroke-linecap="round"/>
+  <path fill-rule="evenodd" fill="#e8eaf0" d="M190 480 L156 336 L156 82 A34 34 0 0 1 224 82 L224 336 Z M178 84 L178 150 A12 12 0 0 0 202 150 L202 84 A12 12 0 0 0 178 84 Z"/>
+</svg>

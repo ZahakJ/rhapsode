@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Rhapsode mark B, 16 px variant: "Splice Stitch" on a 32-unit pixel grid, one hole per corner, two stitches -->
+  <rect width="512" height="512" rx="96" fill="#0b0d12"/>
+  <path fill-rule="evenodd" fill="#e8eaf0" d="M32 128 H224 V384 H32 Z M64 160 h32 v32 h-32 Z M128 160 h32 v32 h-32 Z M64 320 h32 v32 h-32 Z M128 320 h32 v32 h-32 Z"/>
+  <path fill-rule="evenodd" fill="#e8eaf0" d="M288 128 H480 V384 H288 Z M352 160 h32 v32 h-32 Z M416 160 h32 v32 h-32 Z M352 320 h32 v32 h-32 Z M416 320 h32 v32 h-32 Z"/>
+  <path fill="#ff9f43" d="M160 224 H352 V256 H160 Z M160 288 H352 V320 H160 Z"/>
+</svg>
