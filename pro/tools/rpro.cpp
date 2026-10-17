@@ -19,6 +19,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 
+#include "engine/ai/analysis.h"
 #include "engine/ai/transcribe.h"
 #include "engine/audio/mixer.h"
 #include "engine/io/project_io.h"
@@ -50,7 +51,8 @@ int usage() {
                "  rpro loudness PROJECT                  integrated loudness of the active sequence\n"
                "  rpro convert IN OUT                    project interchange (.rpro .otio .fcpxml .edl .xml)\n"
                "  rpro bench playback [--prepare] [--unpaced] [--tracks N] [--size WxH] [--fps F] [--seconds S] [--codec hevc10|h264|prores]\n"
-               "  rpro bench export   (same options) [--preset ID]\n");
+               "  rpro bench export   (same options) [--preset ID]\n"
+               "  rpro bench interview [--minutes N]    task 1 end to end, timed\n");
   return 2;
 }
 
@@ -575,6 +577,103 @@ int cmdBenchExport(int argc, char** argv) {
   return 0;
 }
 
+/**
+ * Task 1, timed: a 20-minute interview cut to about 5 minutes with captions. The talk is
+ * synthesised (espeak-ng) so its words are known; every step is the engine call the editor's
+ * button makes, timed on this machine.
+ */
+int cmdBenchInterview(int argc, char** argv) {
+  fs::path dir = fs::current_path() / "build" / "bench" / "interview";
+  fs::create_directories(dir);
+  fs::path wav = dir / "talk.wav", mp4 = dir / "interview.mp4";
+  int minutes = std::stoi(arg(argc, argv, "--minutes", "20"));
+  if (!fs::exists(mp4)) {
+    // sentences with a hesitation now and then, read at 160 words a minute, a pause between paragraphs
+    const char* topics[] = {"the river", "the old library", "a recipe", "the train", "the market", "a garden", "the radio", "winter"};
+    const char* verbs[] = {"changed", "taught us", "reminded me", "showed", "made", "kept"};
+    std::string text;
+    std::mt19937 rng(42);
+    int words = 0;
+    while (words < minutes * 160) {
+      std::string sent = std::string(rng() % 5 == 0 ? "Um, " : "") + "I think " + topics[rng() % 8] + " " + verbs[rng() % 6] +
+                         " everything about " + topics[rng() % 8] + " in the end.";
+      text += sent + (rng() % 4 == 0 ? "\n\n" : " ");
+      words += 11;
+    }
+    std::FILE* f = std::fopen((dir / "talk.txt").c_str(), "w");
+    std::fputs(text.c_str(), f);
+    std::fclose(f);
+    std::string cmd = "espeak-ng -s 160 -f '" + (dir / "talk.txt").string() + "' -w '" + wav.string() + "' && ffmpeg -nostdin -loglevel error -y "
+                      "-f lavfi -i color=c=0x30343c:s=1280x720:r=30 -i '" + wav.string() + "' -shortest -c:v libx264 -preset ultrafast "
+                      "-tune stillimage -c:a aac '" + mp4.string() + "'";
+    if (std::system(cmd.c_str()) != 0) return 1;
+  }
+  nlohmann::json steps = nlohmann::json::array();
+  auto clock = [] { return std::chrono::steady_clock::now(); };
+  auto secs = [](auto a, auto b) { return std::chrono::duration<double>(b - a).count(); };
+  auto t = clock(), t0 = t;
+  std::string err;
+  Project p = build({mp4.string()}, &err);
+  if (!err.empty()) return 1;
+  const std::string seq = p.active, clip = p.sequences[0].video[0].clips[0].id;
+  steps.push_back({{"step", "import"}, {"s", secs(t, clock())}});
+  t = clock();
+  Transcript tr;
+  tr.media = p.media[0].id;
+  ai::TranscribeOptions o;
+  o.language = "en";
+  if (std::string e = ai::transcribe(mp4.string(), o, tr); !e.empty()) {
+    std::fprintf(stderr, "rpro: %s\n", e.c_str());
+    return 1;
+  }
+  p.transcripts.push_back(tr);
+  steps.push_back({{"step", "transcribe"}, {"s", secs(t, clock())}, {"words", tr.words.size()}});
+  t = clock();
+  auto fillers = ai::fillerWords(p, p.sequences[0], p.sequences[0].video[0].clips[0]);
+  ai::deleteWords(p, seq, clip, fillers);
+  steps.push_back({{"step", "remove filler words"}, {"s", secs(t, clock())}, {"words", fillers.size()}});
+  t = clock();
+  // keep one sentence in four: an editor's picks stand in for a scripted rule
+  std::vector<size_t> drop;
+  int sentence = 0;
+  for (size_t i = 0; i < tr.words.size(); ++i) {
+    if (sentence % 4 != 0) drop.push_back(i);
+    std::string w = tr.words[i].text;
+    if (!w.empty() && (w.back() == '.' || w.back() == '?' || w.back() == '!')) ++sentence;
+  }
+  // deleting words of the first clip: later clips hold the words after earlier cuts, so cut clip by clip
+  int cuts = 0;
+  for (int pass = 0; pass < 1; ++pass) {
+    std::vector<std::string> ids;
+    for (auto& c : p.findSequence(seq)->video[0].clips) ids.push_back(c.id);
+    for (auto it = ids.rbegin(); it != ids.rend(); ++it) cuts += ai::deleteWords(p, seq, *it, drop);
+  }
+  steps.push_back({{"step", "delete sentences (text edit)"}, {"s", secs(t, clock())}, {"cuts", cuts}});
+  t = clock();
+  int captions = 0;
+  for (auto& c : std::vector<Clip>(p.findSequence(seq)->video[0].clips)) captions += ai::addCaptions(p, seq, c.id);
+  steps.push_back({{"step", "captions"}, {"s", secs(t, clock())}, {"cues", captions}});
+  double length = toSeconds(p.findSequence(seq)->duration());
+  t = clock();
+  ExportJob job;
+  job.project = p;
+  job.preset = *findPreset("youtube-1080p");
+  job.preset.width = 1280;
+  job.preset.height = 720;
+  job.path = (dir / "interview-cut.mp4").string();
+  ExportProgress sum;
+  if (std::string e = runExport(job, {}, &sum); !e.empty()) {
+    std::fprintf(stderr, "rpro: %s\n", e.c_str());
+    return 1;
+  }
+  steps.push_back({{"step", "export 720p H.264"}, {"s", secs(t, clock())}, {"encoder", sum.encoder}});
+  saveProject(p, (dir / "interview-cut.rpro").string());
+  nlohmann::json j{{"source_minutes", toSeconds(p.media[0].duration) / 60}, {"result_minutes", length / 60},
+                   {"total_s", secs(t0, clock())}, {"steps", steps}};
+  std::printf("%s\n", j.dump(1).c_str());
+  return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -596,5 +695,6 @@ int main(int argc, char** argv) {
   if (c == "convert") return cmdConvert(argc, argv);
   if (c == "bench" && argc > 2 && std::string(argv[2]) == "playback") return cmdBenchPlayback(argc, argv);
   if (c == "bench" && argc > 2 && std::string(argv[2]) == "export") return cmdBenchExport(argc, argv);
+  if (c == "bench" && argc > 2 && std::string(argv[2]) == "interview") return cmdBenchInterview(argc, argv);
   return usage();
 }

@@ -301,10 +301,17 @@ int addCaptions(Project& p, const std::string& seqId, const std::string& clipId,
   auto cues = captions(placed, o);
   if (cues.empty()) return 0;
   Editor ed(p, seqId);
-  if (!ed.addTrack(TrackKind::Video).empty()) return 0;
+  // one captions track for the whole sequence: reuse it, or add it on top
+  int top = -1;
+  for (int i = 0; i < int(s->video.size()); ++i)
+    if (s->video[size_t(i)].name == "Captions") top = i;
+  if (top < 0) {
+    if (!ed.addTrack(TrackKind::Video).empty()) return 0;
+    s = p.findSequence(seqId);
+    top = int(s->video.size()) - 1;
+    s->video[size_t(top)].name = "Captions";
+  }
   s = p.findSequence(seqId);
-  int top = int(s->video.size()) - 1;
-  s->video[size_t(top)].name = "Captions";
   int n = 0;
   for (auto& q : cues) {
     Clip t;
