@@ -16,6 +16,7 @@
 #include "engine/media/prefetch.h"
 #include "engine/render/renderer.h"
 #include "engine/scopes/scopes.h"
+#include "engine/ai/transcribe.h"
 #include "engine/session/session.h"
 #include "jobs.h"
 #include "player.h"
@@ -106,7 +107,7 @@ class App {
   std::set<std::string> binPicked_;
   std::set<std::string> proxyPending_;
   bool autoProxies_ = true;  // ctrl-click picks several (multicam)
-  std::vector<size_t> pickedWords_;  // transcript selection (word indices)
+  std::vector<ai::WordPick> pickedWords_;  // transcript selection, across the track's clips
   size_t wordAnchor_ = 0;
   bool transcriptFocused_ = false;
   bool gizmoDrag_ = false;

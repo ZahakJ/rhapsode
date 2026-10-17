@@ -146,4 +146,15 @@ TEST_CASE("transcription: words, times, captions and cutting by deleting words")
   for (auto& w : ai::wordsOnTimeline(p, p.sequences[0], p.sequences[0].audio[0].clips.back())) left += w.text;
   CHECK(lower(left).find("editing") == std::string::npos);
   CHECK(lower(left).find("watching") != std::string::npos);
+  // one cut spanning both clips the first edit left: the last word of the first and the first of the second
+  {
+    const auto& cl = p.sequences[0].audio[0].clips;
+    auto w0 = ai::wordsOnTimeline(p, p.sequences[0], cl[0]), w1 = ai::wordsOnTimeline(p, p.sequences[0], cl[1]);
+    std::vector<ai::WordPick> picks{{cl[0].id, w0.back().index}, {cl[1].id, w1.front().index}};
+    Tick before2 = p.sequences[0].duration();
+    std::string err2;
+    CHECK(ai::deleteWordsOnTrack(p, "main", picks, kFlicks / 20, &err2) == 2);
+    CHECK(p.sequences[0].duration() < before2);
+    CHECK(check(p).empty());
+  }
 }
