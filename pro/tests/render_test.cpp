@@ -441,3 +441,33 @@ TEST_CASE("gpu: OCIO (ACES 2.0) output and camera-log input match OCIO's own pro
   for (int k = 0; k < 3; ++k)
     CHECK_MESSAGE(std::abs(img.at(32, 18)[k] - to8(want[k])) <= 3, "S-Log3 ch " << k << ": " << int(img.at(32, 18)[k]) << " vs OCIO " << to8(want[k]));
 }
+
+TEST_CASE("gpu: every multicam angle renders on its own") {
+  gfx::Gpu* g = gpu();
+  if (!g) return;
+  Project p = seqProject(320, 240);
+  for (const char* f : {"shots.mp4", "still.png"}) {
+    Media m;
+    m.id = f;
+    REQUIRE(probe(fx::mediaDir() + "/" + f, m).empty());
+    p.media.push_back(m);
+  }
+  std::string mc = makeMulticam(p, "mc", {"shots.mp4", "still.png"}, {0, -sec(1)});
+  const Sequence& s = *p.findSequence(mc);
+  REQUIRE(s.video.size() == 2);
+  DecoderPool pool(false);
+  Renderer r(*g, pool);
+  for (int a = 0; a < 2; ++a) {
+    gfx::Texture work, out = g->make(160, 120, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER);
+    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(g->device());
+    REQUIRE(r.renderAngle(cmd, p, s, sec(2.5), a, work, 160, 120).empty());
+    r.output(cmd, work, out, p, s.background);
+    SDL_SubmitGPUCommandBuffer(cmd);
+    auto px = g->download(out);
+    int lit = 0;
+    for (size_t i = 0; i < px.size(); i += 4) lit += px[i] > 20 ? 1 : 0;
+    CHECK_MESSAGE(lit > 1000, "angle " << a << " lit " << lit);
+    g->release(work);
+    g->release(out);
+  }
+}

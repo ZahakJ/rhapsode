@@ -278,6 +278,45 @@ int applyReframe(Project& p, const std::string& seqId, const std::string& clipId
   return n;
 }
 
+std::string reframedCopy(Project& p, const std::string& seqId, int width, int height,
+                         const std::map<std::string, std::vector<ReframeKey>>& subjects) {
+  const Sequence* src = p.findSequence(seqId);
+  if (!src) return "";
+  Sequence s = *src;
+  s.id = p.makeId("s");
+  s.name = src->name + " (" + std::to_string(width) + "×" + std::to_string(height) + ")";
+  s.width = width;
+  s.height = height;
+  // fresh ids: the copy is its own timeline
+  std::map<std::string, std::string> links;
+  forEachTrack(s, [&](Track& t, TrackRef) {
+    t.id = p.makeId("t");
+    for (auto& c : t.clips) {
+      c.id = p.makeId("c");
+      if (!c.link.empty()) {
+        auto it = links.find(c.link);
+        c.link = it != links.end() ? it->second : (links[c.link] = p.makeId("l"));
+      }
+    }
+  });
+  std::string id = s.id;
+  p.sequences.push_back(std::move(s));
+  Sequence& q = *p.findSequence(id);
+  std::vector<std::string> pictures;
+  for (auto& t : q.video)
+    for (auto& c : t.clips)
+      if (c.kind == ClipKind::Media) pictures.push_back(c.id);
+  for (auto& cid : pictures) {
+    Clip* c = clipById(q, cid);
+    const Media* m = p.findMedia(c->ref);
+    if (!m || !m->hasVideo) continue;
+    auto it = subjects.find(m->path);
+    std::vector<ReframeKey> centre{{c->in, 0.5, 0.5}};
+    applyReframe(p, id, cid, it != subjects.end() && !it->second.empty() ? it->second : centre);
+  }
+  return id;
+}
+
 // ——— sync by sound ———
 
 namespace {
@@ -312,12 +351,14 @@ std::vector<float> onsets(const std::vector<float>& x, int rate) {
 }
 
 /** the lag of b against a (b[i + lag] ≈ a[i]) in [-maxLag, maxLag] maximising the normalised correlation */
-int64_t bestLag(const std::vector<float>& a, const std::vector<float>& b, int64_t lo, int64_t hi, double* score = nullptr) {
+int64_t bestLag(const std::vector<float>& a, const std::vector<float>& b, int64_t lo, int64_t hi, double* score = nullptr,
+                int64_t minOverlap = 0) {
   int64_t best = 0;
   double bestC = -1e300;
   for (int64_t lag = lo; lag <= hi; ++lag) {
     double c = 0, na = 0, nb = 0;
     int64_t i0 = std::max<int64_t>(0, -lag), i1 = std::min<int64_t>(int64_t(a.size()), int64_t(b.size()) - lag);
+    if (i1 - i0 < minOverlap) continue;  // a sliver of overlap correlates well by chance
     for (int64_t i = i0; i < i1; ++i) {
       double x = a[size_t(i)], y = b[size_t(i + lag)];
       c += x * y;
@@ -381,7 +422,9 @@ std::vector<Tick> syncByAudio(const std::vector<std::string>& paths, Tick maxLag
     }
     auto eb = onsets(b, coarseRate);
     // b[j] ≈ ref[i] at j = i + at + lagE
-    int64_t lagE = bestLag(ref, std::vector<float>(eb.begin(), eb.end()), int64_t(at) * 0 - maxE + int64_t(at), maxE + int64_t(at)) - int64_t(at);
+    // at least 3 s, or a quarter of the reference, must overlap
+    int64_t minOv = std::min<int64_t>(int64_t(ref.size()), std::max<int64_t>(600, int64_t(ref.size()) / 4));
+    int64_t lagE = bestLag(ref, eb, int64_t(at) - maxE, maxE + int64_t(at), nullptr, minOv) - int64_t(at);
     // the fine pass: ±10 ms around it, sample by sample
     AudioDecoder db;
     db.open(paths[k], fine, 1);

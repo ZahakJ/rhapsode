@@ -2,7 +2,8 @@
 //   rhapsode-pro [PROJECT.rpro | TIMELINE.otio/.fcpxml/.edl/.xml | MEDIA...]
 //   --screenshot OUT.png [--frames N] [--size WxH]   render N frames, save the window, quit
 //   --script FILE   timed input for headless UI tests, one event per line:
-//                   "<frame> key <name> [ctrl] [shift] [alt]" | "<frame> down|move|up <x> <y>" | "<frame> save <path>"
+//                   "<frame> key <name> [ctrl] [shift] [alt]" | "<frame> down|move|up <x> <y>" | "<frame> ctrl down|up"
+//                   | "<frame> save <path>"
 
 #include <SDL3/SDL.h>
 #include <imgui.h>
@@ -166,6 +167,8 @@ void inject(const ScriptEvent& e, SDL_Window* win, rhap::app::App& app) {
     io.AddMousePosEvent(x, y);
     if (e.what != "move") io.AddMouseButtonEvent(0, e.what == "down");
     (void)win;
+  } else if (e.what == "ctrl" && !e.args.empty()) {
+    ImGui::GetIO().AddKeyEvent(ImGuiMod_Ctrl, e.args[0] == "down");
   } else if (e.what == "save" && !e.args.empty()) {
     app.session().save(e.args[0]);
   }

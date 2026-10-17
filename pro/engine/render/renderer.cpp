@@ -398,6 +398,14 @@ std::string Renderer::render(SDL_GPUCommandBuffer* cmd, const Project& p, const 
   return renderInto(cmd, p, s, t, target, 0, -1);
 }
 
+std::string Renderer::renderAngle(SDL_GPUCommandBuffer* cmd, const Project& p, const Sequence& mc, Tick t, int angle,
+                                  Texture& target, int w, int h) {
+  gpu_.ensure(target, w, h, kWork, kTargetUsage);
+  if (!target) return "cannot allocate the angle";
+  // a depth of 1: the angle's own scratch textures never collide with the program's
+  return renderInto(cmd, p, mc, t, target, 1, angle);
+}
+
 std::string Renderer::renderInto(SDL_GPUCommandBuffer* cmd, const Project& p, const Sequence& s, Tick t, Texture& target,
                                  int depth, int onlyTrack) {
   if (depth > 8) return "sequences nested too deep";
