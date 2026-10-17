@@ -398,7 +398,7 @@ std::vector<std::string> benchSources(const BenchSpec& b) {
       if (!fs::exists(piece)) {
         // the encode takes the machine's GPU lock, unless the caller already holds it (bench.sh does)
         std::string lock = std::getenv("RPRO_HOLDS_GPU_LOCK") ? "" : "flock /tmp/side-gpu.lock ";
-        std::string cmd = lock + "ffmpeg -nostdin -loglevel error -y -threads 4 -filter_threads 2 -f lavfi -i " +
+        std::string cmd = "nice -n 19 ffmpeg -nostdin -loglevel error -y -threads 4 -filter_threads 2 -f lavfi -i " +
                           std::string(patterns[i % 6]) + "=s=" + std::to_string(b.w) + "x" + std::to_string(b.h) + ":r=" +
                           std::to_string(b.fps) + ":d=10 -f lavfi -i sine=frequency=" + std::to_string(220 * (i + 1)) +
                           ":duration=10 " + venc + " -c:a aac -shortest '" + piece.string() + ".part." + ext + "' && mv '" +
@@ -462,13 +462,12 @@ int cmdBenchPlayback(int argc, char** argv) {
   Project p = benchProject(b, files);
   bool useProxies = flag(argc, argv, "--proxies");
   if (useProxies) {
-    // the editor's own proxies: half size, all-intra H.264 (what Make proxies makes)
-    std::string lock = std::getenv("RPRO_HOLDS_GPU_LOCK") ? "" : "flock /tmp/side-gpu.lock ";
+    // the editor's own proxies: half size, all-intra H.264 (what Make proxies makes), on the CPU so they need no GPU
     for (auto& m : p.media) {
       std::string out = m.path + ".proxy.mp4";
       if (!fs::exists(out)) {
-        std::string cmd = lock + "ffmpeg -nostdin -loglevel error -y -i '" + m.path + "' -vf scale=" + std::to_string(m.width / 2) +
-                          ":-2 -c:v h264_nvenc -g 1 -preset p4 -cq 23 -c:a aac '" + out + ".part.mp4' && mv '" + out + ".part.mp4' '" + out + "'";
+        std::string cmd = "nice -n 19 ffmpeg -nostdin -loglevel error -y -i '" + m.path + "' -vf scale=" + std::to_string(m.width / 2) +
+                          ":-2 -c:v libx264 -g 1 -preset veryfast -crf 20 -pix_fmt yuv420p -c:a aac '" + out + ".part.mp4' && mv '" + out + ".part.mp4' '" + out + "'";
         if (std::system(cmd.c_str()) != 0) return 1;
       }
       m.proxy = out;
