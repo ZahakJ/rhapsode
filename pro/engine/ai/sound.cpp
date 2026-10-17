@@ -123,6 +123,50 @@ std::string isolateVoice(const std::string& src, const std::string& out, const s
   return r == 0 ? std::string() : "could not write " + out;
 }
 
+std::string removeBackground(const std::string& src, Tick in, Tick span, Rate rate, const std::string& out,
+                             const std::string& model, int maxHeight, const std::string& rembg) {
+  fs::path work = fs::path(out).parent_path() / (".matte-" + std::to_string(getpid()) + "-" + std::to_string(in));
+  fs::create_directories(work / "in");
+  fs::create_directories(work / "out");
+  char ss[32], tt[32], fr[48];
+  std::snprintf(ss, sizeof ss, "%.6f", toSeconds(in));
+  std::snprintf(tt, sizeof tt, "%.6f", toSeconds(span));
+  std::snprintf(fr, sizeof fr, "%lld/%lld", (long long)rate.num, (long long)rate.den);
+  std::string vf = "fps=" + std::string(fr) + ",scale=-2:'min(ih," + std::to_string(maxHeight) + ")'";
+  if (run({"ffmpeg", "-nostdin", "-y", "-loglevel", "error", "-ss", ss, "-t", tt, "-i", src, "-vf", vf, "-an",
+           (work / "in" / "%06d.png").string()}) != 0) {
+    fs::remove_all(work);
+    return "ffmpeg could not read the picture";
+  }
+  int r = run({rembg, "p", "-m", model, (work / "in").string(), (work / "out").string()});
+  if (r != 0) {
+    fs::remove_all(work);
+    return r == 127 ? "rembg is not installed (uv tool install \"rembg[cpu,cli]\")" : "rembg failed";
+  }
+  r = run({"ffmpeg", "-nostdin", "-y", "-loglevel", "error", "-framerate", fr, "-i", (work / "out" / "%06d.png").string(),
+           "-c:v", "png", "-pix_fmt", "rgba", out});
+  fs::remove_all(work);
+  return r == 0 ? std::string() : "could not write " + out;
+}
+
+std::string swapPicture(Project& p, const std::string& seqId, const std::string& clipId, const std::string& path) {
+  Sequence* s = p.findSequence(seqId);
+  if (!s) return "no such sequence";
+  Clip* c = clipById(*s, clipId);
+  if (!c || c->kind != ClipKind::Media) return "not a media clip";
+  const Media* orig = p.findMedia(c->ref);
+  Media m;
+  m.id = p.makeId("m");
+  if (std::string e = probe(path, m); !e.empty()) return e;
+  m.name = (orig ? orig->name : "clip") + " · cut out";
+  p.media.push_back(m);
+  c->ref = m.id;
+  c->in = 0;
+  Tick limit = m.duration;
+  if (c->sourceSpan() > limit) c->dur = Tick(double(limit) / std::fabs(c->speed));  // a frame short at most
+  return {};
+}
+
 std::string swapSound(Project& p, const std::string& seqId, const std::string& clipId, const std::string& path,
                       const std::string& suffix) {
   Sequence* s = p.findSequence(seqId);
