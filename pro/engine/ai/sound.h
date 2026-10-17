@@ -28,4 +28,15 @@ std::string isolateVoice(const std::string& src, const std::string& out, const s
 std::string swapSound(Project& p, const std::string& seqId, const std::string& clipId, const std::string& processedPath,
                       const std::string& suffix);
 
+/**
+ * Background removal: the clip's stretch of its media, every frame cut out by
+ * a local segmentation model (rembg; U²-Net by default), written as an RGBA
+ * PNG-in-MOV beside the original. maxHeight caps the matte's size.
+ */
+std::string removeBackground(const std::string& src, Tick in, Tick span, Rate rate, const std::string& out,
+                             const std::string& model = "u2net", int maxHeight = 1080, const std::string& rembg = "rembg");
+
+/** points a picture clip at its matte (which starts at the clip's in point) */
+std::string swapPicture(Project& p, const std::string& seqId, const std::string& clipId, const std::string& mattePath);
+
 }  // namespace rhap::ai

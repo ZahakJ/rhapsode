@@ -1359,6 +1359,15 @@ void App::clipMenu() {
   };
   if (ImGui::MenuItem("Reduce noise (sound)", nullptr, false, m && m->hasAudio)) processed("clean", "denoised", false);
   if (ImGui::MenuItem("Isolate voice (Demucs)", nullptr, false, m && m->hasAudio)) processed("isolate voice in", "voice", true);
+  if (ImGui::MenuItem("Remove background (local model)", nullptr, false, m && m->hasVideo)) {
+    std::string out = (fs::path(path).parent_path() / (fs::path(path).stem().string() + "-" + clipId + "-cutout.mov")).string();
+    Tick in = c->in, span = c->sourceSpan();
+    Rate rate = m->kind == MediaKind::Image ? s->rate : m->rate;
+    task("cut out " + m->name, [path, in, span, rate, out] { return ai::removeBackground(path, in, span, rate, out); },
+         [this, out, seqId, clipId] {
+           s_.apply("remove background", [&](Editor&) { return ai::swapPicture(s_.project, seqId, clipId, out); });
+         });
+  }
   ImGui::EndDisabled();
   ImGui::EndMenu();
 }

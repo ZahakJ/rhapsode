@@ -60,3 +60,21 @@ TEST_CASE("voice isolation (Demucs, when RHAP_TEST_DEMUCS=1)") {
   REQUIRE(probe(out, m).empty());
   CHECK(std::fabs(toSeconds(m.duration) - 3) < 0.05);
 }
+
+TEST_CASE("background removal (rembg, when RHAP_TEST_REMBG=1)") {
+  if (!std::getenv("RHAP_TEST_REMBG")) return;
+  std::string src = fx::mediaDir() + "/figure.mp4";
+  if (!std::filesystem::exists(src))
+    std::system(("ffmpeg -nostdin -loglevel error -y -f lavfi -i color=c=0x2a6f3a:s=320x240:r=10:d=1 "
+                 "-vf \"drawbox=x=110:y=40:w=100:h=180:color=white:t=fill\" -c:v libx264 -preset ultrafast -pix_fmt yuv420p '" + src + "'").c_str());
+  std::string out = fx::tmpdir("matte") + "/figure-matte.mov";
+  REQUIRE(ai::removeBackground(src, 0, kFlicks, Rate{10, 1}, out).empty());
+  VideoDecoder d;
+  REQUIRE(d.open(out, false).empty());
+  const VideoFrame* f = d.frameAt(fromSeconds(0.5));
+  REQUIRE(f);
+  REQUIRE(f->layout == PixelLayout::RGBA8);
+  auto alpha = [&](int x, int y) { return int(f->plane(0)[size_t(y) * f->stride(0) + size_t(x) * 4 + 3]); };
+  CHECK(alpha(160, 130) > 200);  // the figure stays
+  CHECK(alpha(10, 10) < 30);     // the green goes
+}
