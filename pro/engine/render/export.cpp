@@ -11,6 +11,7 @@ extern "C" {
 #include <SDL3/SDL.h>
 
 #include <chrono>
+#include <thread>
 #include <cstring>
 
 #include "../audio/mixer.h"
@@ -19,6 +20,7 @@ extern "C" {
 #include <nlohmann/json.hpp>
 #include <sys/stat.h>
 #include "../gfx/gpu.h"
+#include "../media/prefetch.h"
 #include "renderer.h"
 
 namespace rhap {
@@ -122,6 +124,10 @@ AVCodecContext* openVideoEncoder(const Preset& pr, int W, int H, Rate rate, bool
     c->gop_size = gop > 0 ? gop : pr.gop > 0 ? pr.gop : int(std::lround(rate.fps() * 2));
     if (pr.bitrate > 0) c->bit_rate = pr.bitrate;
     if (globalHeader) c->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+    if (name.find("nvenc") == std::string::npos) {
+      c->thread_count = 0;  // software encoders (ProRes, DNxHR, x264/x265): every core
+      c->thread_type = FF_THREAD_SLICE | FF_THREAD_FRAME;
+    }
     AVDictionary* opt = nullptr;
     std::string cq = std::to_string(pr.cq);
     if (name.find("nvenc") != std::string::npos) {
@@ -271,7 +277,7 @@ std::string runExport(const ExportJob& jobIn, const std::function<bool(const Exp
   // ——— GPU ———
   gfx::Gpu gpu;
   if (std::string e = gpu.init(nullptr); !e.empty()) return e;
-  DecoderPool pool(job.hwDecode);
+  PrefetchPool pool(job.hwDecode, 8);  // every layer decodes ahead on its own thread
   Renderer ren(gpu, pool);
   audio::Mixer mixer(s.sampleRate);
   Renderer::YuvTarget tgt;
@@ -547,7 +553,7 @@ std::string runSmartExport(const ExportJob& jobIn, const std::function<bool(cons
   // ——— render the segments that changed ———
   gfx::Gpu gpu;
   if (std::string e = gpu.init(nullptr); !e.empty()) return e;
-  DecoderPool pool(job.hwDecode);
+  PrefetchPool pool(job.hwDecode, 8);  // every layer decodes ahead on its own thread
   Renderer ren(gpu, pool);
   Renderer::YuvTarget tgt;
   tgt.matrix = pr.hdr ? 9 : 1;
@@ -580,7 +586,14 @@ std::string runSmartExport(const ExportJob& jobIn, const std::function<bool(cons
     avformat_alloc_output_context2(&oc, nullptr, "matroska", tmp.c_str());
     GpuLayout l2{};
     std::string u2, e2;
-    AVCodecContext* vc = openVideoEncoder(pr, W, H, rate, true, L, true, l2, u2, e2);
+    AVCodecContext* vc = nullptr;
+    // NVENC can refuse a context while another process holds the GPU; segments must share one encoder, so wait for it
+    for (int attempt = 0; attempt < 5; ++attempt) {
+      vc = openVideoEncoder(pr, W, H, rate, true, L, true, l2, u2, e2);
+      if (vc && u2 == used) break;
+      avcodec_free_context(&vc);
+      std::this_thread::sleep_for(std::chrono::milliseconds(300 * (attempt + 1)));
+    }
     if (!oc || !vc || u2 != used) {
       avcodec_free_context(&vc);
       if (oc) avformat_free_context(oc);

@@ -33,6 +33,7 @@ struct VideoFrame {
   ColorInfo color;
   int rotation = 0;  // degrees clockwise to display upright
   bool hw = false;   // decoded on the GPU (NVDEC)
+  bool onGpu = false;  // still on the GPU: not yet copied for display (internal to the decoder)
   const uint8_t* plane(int i) const;
   int stride(int i) const;
 };
