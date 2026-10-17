@@ -1170,6 +1170,7 @@ void App::queueExport(const std::string& presetId, const std::string& out, bool 
   j.title = fs::path(out).filename().string() + " · " + presetId;
   j.output = out;
   j.argv = {rproPath(), "export", snap, presetId, out};
+  if (smartExport_) j.argv.push_back("--smart");
   if (publishExport_ && !webServer_.empty()) {
     j.argv.insert(j.argv.end(), {"--publish", webServer_, "--title", s_.project.name});
     j.title += " → share link";
@@ -1196,6 +1197,7 @@ void App::exportPanel() {
   }
   ImGui::InputText("File", &exportPath_);
   ImGui::Checkbox("In to out only", &exportMarks_);
+  ImGui::Checkbox("Smart render (reuse unchanged stretches)", &smartExport_);
   ImGui::BeginDisabled(webServer_.empty() || webKey_.empty());
   ImGui::Checkbox("Publish to a share link when done", &publishExport_);
   ImGui::EndDisabled();

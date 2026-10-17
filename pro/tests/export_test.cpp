@@ -80,3 +80,67 @@ TEST_CASE("export: every preset is frame-exact across cuts, with sound") {
     }
   }
 }
+
+TEST_CASE("smart render: unchanged segments are reused, changed ones re-encoded, output frame-exact") {
+  std::string src = fx::numbered("h264-6s.mp4", "-c:v libx264 -preset ultrafast -g 48 -bf 3 -pix_fmt yuv420p -c:a aac", 6);
+  REQUIRE(!src.empty());
+  Project p = fx::project(2, 2);
+  p.sequences[0].width = 320;
+  p.sequences[0].height = 240;
+  Media m;
+  m.id = "src";
+  REQUIRE(probe(src, m).empty());
+  p.media.push_back(m);
+  Editor ed(p, "main");
+  Clip a = clipOf(p, m, 0, sec(3)), b = clipOf(p, m, sec(3), sec(3));
+  b.in = sec(3);
+  REQUIRE(ed.overwrite({TrackKind::Video, 0}, a).empty());
+  REQUIRE(ed.overwrite({TrackKind::Video, 0}, b).empty());
+  REQUIRE(ed.overwrite({TrackKind::Audio, 0}, clipOf(p, m, 0, sec(6))).empty());
+  std::string dir = fx::tmpdir("smart");
+  ExportJob job;
+  job.project = p;
+  job.preset = *findPreset("youtube-1080p");
+  job.preset.width = job.preset.height = 0;
+  job.smart = true;
+  job.cacheDir = dir + "/cache";
+  auto run = [&](const std::string& name) {
+    job.path = dir + "/" + name + ".mp4";
+    ExportProgress sum;
+    std::string e = runExport(job, {}, &sum);
+    REQUIRE_MESSAGE(e.empty(), e);
+    return sum;
+  };
+  auto verify = [&](const std::string& name, bool gradedTail) {
+    VideoDecoder d;
+    REQUIRE(d.open(dir + "/" + name + ".mp4", false).empty());
+    int n = 0;
+    for (const VideoFrame* f = d.frameAt(0); f; f = d.next(), ++n) {
+      int want = std::clamp((n * 7) % 256, 16, 235);
+      int got = centreLuma(*f);
+      if (!gradedTail || n < 90) CHECK_MESSAGE(std::abs(got - want) <= 3, name << " frame " << n << ": " << got << " want " << want);
+      CHECK(std::llabs(f->pts - frameStart(n, Rate{30, 1})) < kFlicks / 1000);
+    }
+    CHECK(n == 180);
+    AudioDecoder ad;
+    REQUIRE(ad.open(dir + "/" + name + ".mp4").empty());
+    CHECK(std::llabs(ad.lengthSamples() - 288000) <= 2048);
+  };
+  ExportProgress cold = run("cold");
+  CHECK(cold.reused == 0);
+  verify("cold", false);
+  ExportProgress warm = run("warm");
+  CHECK(warm.reused == 180);  // nothing changed: nothing re-encoded
+  verify("warm", false);
+  MESSAGE("cold " << cold.fps << " fps, warm " << warm.fps << " fps");
+  // brighten clip B (3–6 s): segments 2–4 s and 4–6 s change, 0–2 s does not
+  job.project.sequences[0].video[0].clips[1].grade.offset = {0.1, 0.1, 0.1};
+  ExportProgress part = run("part");
+  CHECK(part.reused == 60);
+  verify("part", true);  // B (from 90) is graded: checked below
+  VideoDecoder d;
+  REQUIRE(d.open(dir + "/part.mp4", false).empty());
+  const VideoFrame* f = d.frameAt(frameStart(120, Rate{30, 1}));
+  REQUIRE(f);
+  CHECK(centreLuma(*f) > std::clamp((120 * 7) % 256, 16, 235) + 10);  // the grade is in the new segments
+}

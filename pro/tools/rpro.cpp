@@ -41,7 +41,7 @@ int usage() {
                "  rpro probe FILE...                     media info as JSON\n"
                "  rpro presets                           export presets\n"
                "  rpro new OUT.rpro FILE...              a project with the files cut end to end\n"
-               "  rpro export PROJECT PRESET OUT [--in S] [--out S] [--sw-decode]\n"
+               "  rpro export PROJECT PRESET OUT [--in S] [--out S] [--smart] [--sw-decode] [--publish URL]\n"
                "  rpro frame PROJECT SECONDS OUT.png     render one frame\n"
                "  rpro transcribe FILE [--lang L] [--model M] [--threads N] [--cpu] [--srt OUT]\n"
                "  rpro open-web SHARE-URL OUT.rpro       a quick-mode render as a Pro project (RHAPSODE_KEY)\n"
@@ -168,6 +168,7 @@ int cmdExport(int argc, char** argv) {
   std::string out = arg(argc, argv, "--out", "");
   if (!out.empty()) job.out = fromSeconds(std::stod(out));
   job.hwDecode = !flag(argc, argv, "--sw-decode");
+  job.smart = flag(argc, argv, "--smart");
   if (flag(argc, argv, "--native-size")) job.preset.width = job.preset.height = 0;
   ExportProgress sum;
   auto t0 = std::chrono::steady_clock::now();
@@ -182,7 +183,8 @@ int cmdExport(int argc, char** argv) {
     return 1;
   }
   double el = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-  nlohmann::json res{{"path", job.path}, {"frames", sum.total}, {"seconds", el}, {"fps", sum.fps}, {"encoder", sum.encoder}};
+  nlohmann::json res{{"path", job.path}, {"frames", sum.total}, {"seconds", el}, {"fps", sum.fps}, {"encoder", sum.encoder},
+                     {"reusedFrames", sum.reused}};
   std::string pubServer = arg(argc, argv, "--publish", "");
   if (!pubServer.empty()) {
     web::Remote r = remoteFrom(argc, argv, pubServer);

@@ -108,7 +108,7 @@ class App {
   bool exportMarks_ = false;
   // Rhapsode web (quick mode): where it lives and the invite key
   std::string webServer_, webKey_, webLink_;
-  bool showWeb_ = false, publishExport_ = false;
+  bool showWeb_ = false, publishExport_ = false, smartExport_ = true;
 
   // async file dialogs
   struct DialogResult {
