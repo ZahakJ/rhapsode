@@ -460,6 +460,20 @@ int cmdBenchPlayback(int argc, char** argv) {
   if (files.empty()) return 1;
   if (flag(argc, argv, "--prepare")) return 0;  // sources only; measure in a second run under the GPU lock
   Project p = benchProject(b, files);
+  bool useProxies = flag(argc, argv, "--proxies");
+  if (useProxies) {
+    // the editor's own proxies: half size, all-intra H.264 (what Make proxies makes)
+    std::string lock = std::getenv("RPRO_HOLDS_GPU_LOCK") ? "" : "flock /tmp/side-gpu.lock ";
+    for (auto& m : p.media) {
+      std::string out = m.path + ".proxy.mp4";
+      if (!fs::exists(out)) {
+        std::string cmd = lock + "ffmpeg -nostdin -loglevel error -y -i '" + m.path + "' -vf scale=" + std::to_string(m.width / 2) +
+                          ":-2 -c:v h264_nvenc -g 1 -preset p4 -cq 23 -c:a aac '" + out + ".part.mp4' && mv '" + out + ".part.mp4' '" + out + "'";
+        if (std::system(cmd.c_str()) != 0) return 1;
+      }
+      m.proxy = out;
+    }
+  }
   const Sequence& s = p.sequences[0];
   gfx::Gpu gpu;
   if (std::string e = gpu.init(nullptr); !e.empty()) {
@@ -467,6 +481,7 @@ int cmdBenchPlayback(int argc, char** argv) {
     return 1;
   }
   PrefetchPool pool(!flag(argc, argv, "--sw-decode"), 8);
+  pool.setProxies(useProxies);
   Renderer ren(gpu, pool);
   // a display-sized output, as the viewer draws
   gfx::Texture work, view = gpu.make(1920, 1080, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
@@ -475,8 +490,20 @@ int cmdBenchPlayback(int argc, char** argv) {
   const double budget = 1000.0 / b.fps;
   bool paced = !flag(argc, argv, "--unpaced");
   std::vector<double> ms;
+  std::vector<int64_t> dropsAt;
   int dropped = 0;
   SDL_GPUFence* prev = nullptr;
+  // pre-roll, as an editor does before it starts the clock: the first frame of every layer is decoded
+  {
+    auto t0 = std::chrono::steady_clock::now();
+    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(gpu.device());
+    ren.render(cmd, p, s, 0, work);
+    ren.output(cmd, work, view, p, s.background);
+    SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
+    SDL_WaitForGPUFences(gpu.device(), true, &fence, 1);
+    SDL_ReleaseGPUFence(gpu.device(), fence);
+    std::fprintf(stderr, "pre-roll %.1f ms\n", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+  }
   auto start = std::chrono::steady_clock::now();
   for (int64_t f = 0; f < frames; ++f) {
     auto t0 = std::chrono::steady_clock::now();
@@ -499,6 +526,7 @@ int cmdBenchPlayback(int argc, char** argv) {
       if (now > due + budget) {
         int64_t skip = int64_t((now - due) / budget);
         dropped += int(skip);
+        if (dropsAt.size() < 20) dropsAt.push_back(f);
         f += skip;
       } else if (now < due) {
         SDL_DelayPrecise(Uint64((due - now) * 1e6));
@@ -531,8 +559,10 @@ int cmdBenchPlayback(int argc, char** argv) {
                    {"codec", b.codec},
                    {"decode", flag(argc, argv, "--sw-decode") ? "software" : (nvdecAvailable() ? "nvdec" : "software")},
                    {"paced", paced},
+                   {"proxies", useProxies},
                    {"frames", frames},
                    {"dropped", dropped},
+                   {"drops_at_frames", dropsAt},
                    {"wall_s", total},
                    {"achieved_fps", double(frames - dropped) / total},
                    {"frame_ms_p50", pct(ms, 0.5)},

@@ -18,6 +18,8 @@ info "sources"
 "$BIN/rpro" bench playback --prepare
 info "rhapsode pro: paced playback (real time, 60 s)"
 "$BIN/rpro" bench playback > "$OUT/pro-playback-4k60x3.json"
+info "rhapsode pro: paced playback with all-intra proxies (seek latency)"
+"$BIN/rpro" bench playback --proxies > "$OUT/pro-playback-4k60x3-proxies.json"
 info "rhapsode pro: unpaced throughput"
 "$BIN/rpro" bench playback --unpaced > "$OUT/pro-throughput-4k60x3.json"
 info "rhapsode pro: 1080p30 H.264, 3 tracks"
@@ -56,22 +58,20 @@ print("\n".join(x))
 PY
 MELT="flatpak run --env=QT_QPA_PLATFORM=offscreen --filesystem=$B --command=melt org.kde.kdenlive"  # qtblend needs Qt, offscreen
 info "kdenlive: throughput to a null consumer (its playback engine, unthrottled)"
-/usr/bin/time -f '{"wall_s": %e, "max_rss_kb": %M}' $MELT "$B/bench.mlt" -consumer null real_time=-4 terminate_on_pause=1 \
-  > /dev/null 2> "$B/melt-null.log" || true
-tail -1 "$B/melt-null.log" > "$OUT/kdenlive-throughput-4k60x3.json"
+python3 tools/timeit.py "$OUT/kdenlive-throughput-4k60x3.json" frames=3600 -- $MELT "$B/bench.mlt" -consumer null real_time=-4 \
+  terminate_on_pause=1 > /dev/null 2> "$B/melt-null.log" || true
 info "kdenlive: export HEVC (the best encoder its flatpak offers)"
 VC=$($MELT -query video_codecs 2>/dev/null | grep -oE "hevc_nvenc|libx265" | head -1 || echo libx265)
-/usr/bin/time -f '{"wall_s": %e, "max_rss_kb": %M, "vcodec": "'"$VC"'"}' $MELT "$B/bench.mlt" \
+python3 tools/timeit.py "$OUT/kdenlive-export-4k-hevc.json" frames=3600 vcodec=$VC -- $MELT "$B/bench.mlt" \
   -consumer avformat:"$B/kdenlive-export.mp4" vcodec=$VC pix_fmt=p010le vb=40M acodec=aac real_time=-4 \
   > /dev/null 2> "$B/melt-export.log" || true
-tail -1 "$B/melt-export.log" > "$OUT/kdenlive-export-4k-hevc.json"
 
 info "ffmpeg floor: the same composition as one filter graph, NVDEC + NVENC"
 S0=$(ls "$B"/src0-hevc10-3840x2160p60-60s.mp4); S1=$(ls "$B"/src1-hevc10-3840x2160p60-60s.mp4); S2=$(ls "$B"/src2-hevc10-3840x2160p60-60s.mp4)
-/usr/bin/time -f '{"wall_s": %e, "max_rss_kb": %M}' ffmpeg -nostdin -loglevel error -y -hwaccel cuda -i "$S0" -hwaccel cuda -i "$S1" -hwaccel cuda -i "$S2" \
+python3 tools/timeit.py "$OUT/ffmpeg-floor-4k-hevc.json" frames=3600 -- ffmpeg -nostdin -loglevel error -y -hwaccel cuda -i "$S0" -hwaccel cuda -i "$S1" -hwaccel cuda -i "$S2" \
   -filter_complex "[1]eq=saturation=1.2,scale=1728:-2,rotate=3*PI/180:c=none:ow=rotw(3*PI/180):oh=roth(3*PI/180)[a];[2]eq=saturation=1.2,scale=1728:-2,rotate=6*PI/180:c=none:ow=rotw(6*PI/180):oh=roth(6*PI/180)[b];[0][a]overlay=1901:162[o];[o][b]overlay=211:1026,format=p010le" \
-  -c:v hevc_nvenc -profile:v main10 -preset p5 -cq 21 -c:a aac "$B/ffmpeg-floor.mp4" 2> "$B/ffmpeg-floor.time" || true
-tail -1 "$B/ffmpeg-floor.time" > "$OUT/ffmpeg-floor-4k-hevc.json"
+  -c:v hevc_nvenc -profile:v main10 -preset p5 -cq 21 -c:a aac "$B/ffmpeg-floor.mp4" 2> "$B/ffmpeg-floor.log" || true
 info "task 1: a 20-minute interview to about 5 minutes with captions"
+rm -rf "$B/interview"
 "$BIN/rpro" bench interview --minutes 20 > "$OUT/pro-task-interview.json"
 info "done"

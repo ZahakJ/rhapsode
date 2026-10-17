@@ -262,16 +262,39 @@ struct VideoDecoder::Impl {
   }
 
   /** wraps a decoded frame (moving it to the CPU if it came from NVDEC) */
+  /** wraps a decoded frame; an NVDEC frame stays on the GPU until materialize() (a seek skips most of them) */
   std::unique_ptr<VideoFrame> wrap(AVFrame* raw) {
     auto out = std::make_unique<VideoFrame>();
+    int64_t ts = raw->best_effort_timestamp != AV_NOPTS_VALUE ? raw->best_effort_timestamp : raw->pts;
+    out->pts = ts == AV_NOPTS_VALUE ? 0 : av_rescale_q(ts - streamStart(st), st->time_base, kFlickTb);
+    out->dur = raw->duration > 0 ? av_rescale_q(raw->duration, st->time_base, kFlickTb) : frameTicks(rate);
     std::shared_ptr<AVFrame> f = newFrame();
+    av_frame_ref(f.get(), raw);
+    out->av = std::move(f);
     if (raw->format == AV_PIX_FMT_CUDA) {
-      if (av_hwframe_transfer_data(f.get(), raw, 0) < 0) return nullptr;
-      av_frame_copy_props(f.get(), raw);
       out->hw = true;
-    } else {
-      av_frame_ref(f.get(), raw);
+      out->onGpu = true;
+      return out;
     }
+    if (!describe(*out)) return nullptr;
+    return out;
+  }
+
+  /** the copy to the CPU, done only for the frames that are shown */
+  bool materialize(VideoFrame& v) {
+    if (!v.onGpu) return true;
+    std::shared_ptr<AVFrame> sw = newFrame();
+    if (av_hwframe_transfer_data(sw.get(), v.av.get(), 0) < 0) return false;
+    av_frame_copy_props(sw.get(), v.av.get());
+    v.av = std::move(sw);
+    v.onGpu = false;
+    return describe(v);
+  }
+
+  /** layout, depth and colour of a CPU frame (RGB-ish formats are converted to RGBA here) */
+  bool describe(VideoFrame& vf) {
+    VideoFrame* out = &vf;
+    std::shared_ptr<AVFrame> f = vf.av;
     const AVPixFmtDescriptor* d = av_pix_fmt_desc_get(AVPixelFormat(f->format));
     out->width = f->width;
     out->height = f->height;
@@ -305,7 +328,7 @@ struct VideoDecoder::Impl {
       rgb->format = dst;
       rgb->width = f->width;
       rgb->height = f->height;
-      if (!sws || av_frame_get_buffer(rgb.get(), 64) < 0) return nullptr;
+      if (!sws || av_frame_get_buffer(rgb.get(), 64) < 0) return false;
       sws_scale(sws, f->data, f->linesize, 0, f->height, rgb->data, rgb->linesize);
       av_frame_copy_props(rgb.get(), f.get());
       f = rgb;
@@ -315,11 +338,8 @@ struct VideoDecoder::Impl {
       out->color.range = 2;
       if (!(d && (d->flags & AV_PIX_FMT_FLAG_RGB))) out->color.matrix = color.matrix;
     }
-    int64_t ts = raw->best_effort_timestamp != AV_NOPTS_VALUE ? raw->best_effort_timestamp : raw->pts;
-    out->pts = ts == AV_NOPTS_VALUE ? 0 : av_rescale_q(ts - streamStart(st), st->time_base, kFlickTb);
-    out->dur = raw->duration > 0 ? av_rescale_q(raw->duration, st->time_base, kFlickTb) : frameTicks(rate);
     out->av = std::move(f);
-    return out;
+    return true;
   }
 
   /** the next decoded frame in stream order, or null at the end */
@@ -386,13 +406,13 @@ struct VideoDecoder::Impl {
     t += slop;
     if (cur && t >= cur->pts) {
       VideoFrame* n = peek();
-      if (!n) return cur.get();  // past the last frame: it holds
-      if (t < n->pts) return cur.get();
+      if (!n) return materialize(*cur) ? cur.get() : nullptr;  // past the last frame: it holds
+      if (t < n->pts) return materialize(*cur) ? cur.get() : nullptr;
       if (n->pts - t < 0 && t - cur->pts > 2 * kFlicks) {
         // far ahead: a seek is cheaper than decoding through
       } else {
         while ((n = peek()) && n->pts <= t) cur = std::move(pending);
-        return cur.get();
+        return materialize(*cur) ? cur.get() : nullptr;
       }
     }
     // seek, then decode forward; step back further if the demuxer lands late
@@ -406,7 +426,7 @@ struct VideoDecoder::Impl {
     }
     VideoFrame* n;
     while ((n = peek()) && n->pts <= t) cur = std::move(pending);
-    return cur.get();
+    return materialize(*cur) ? cur.get() : nullptr;
   }
 };
 
@@ -445,7 +465,7 @@ const VideoFrame* VideoDecoder::next() {
   if (!d_->cur) return d_->get(0);
   if (!d_->peek()) return nullptr;
   d_->cur = std::move(d_->pending);
-  return d_->cur.get();
+  return d_->materialize(*d_->cur) ? d_->cur.get() : nullptr;
 }
 
 // ——— audio ———
