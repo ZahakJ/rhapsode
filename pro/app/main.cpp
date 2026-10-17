@@ -94,7 +94,7 @@ void fonts(float scale) {
   ImFontConfig merge;
   merge.MergeMode = loaded;
   static const ImWchar arabic[] = {0x0600, 0x06FF, 0x0750, 0x077F, 0xFB50, 0xFDFF, 0xFE70, 0xFEFF, 0};
-  static const ImWchar symbols[] = {0x2200, 0x22FF, 0x25A0, 0x25FF, 0};
+  static const ImWchar symbols[] = {0x2190, 0x21FF, 0x2200, 0x22FF, 0x25A0, 0x25FF, 0};
   if (std::filesystem::exists(plex)) io.Fonts->AddFontFromFileTTF(plex.c_str(), px, &merge, arabic);
   const char* sym = "/usr/share/fonts/TTF/DejaVuSans.ttf";
   if (std::filesystem::exists(sym)) {
@@ -117,14 +117,14 @@ void defaultLayout(ImGuiID dock) {
   ImGui::DockBuilderSplitNode(right, ImGuiDir_Down, 0.5f, &scopes, &right);
   ImGuiID audio, tl;
   ImGui::DockBuilderSplitNode(bottom, ImGuiDir_Right, 0.22f, &audio, &tl);
-  ImGui::DockBuilderDockWindow("Media", left);
+  ImGui::DockBuilderDockWindow("Transcript", left);
   ImGui::DockBuilderDockWindow("Export", left);
+  ImGui::DockBuilderDockWindow("Media", left);
   ImGui::DockBuilderDockWindow("Program", centre);
   ImGui::DockBuilderDockWindow("Inspector", right);
   ImGui::DockBuilderDockWindow("Scopes", scopes);
   ImGui::DockBuilderDockWindow("Timeline", tl);
   ImGui::DockBuilderDockWindow("Audio", audio);
-  ImGui::DockBuilderDockWindow("Transcript", left);
   ImGui::DockBuilderFinish(dock);
 }
 

@@ -26,6 +26,15 @@ When two pieces are not enough: any number of video, music and text tracks. Phot
 
 <p align="center"><img src="docs/assets/studio.png" alt="The studio" width="900"></p>
 
+## Pro
+
+For long, multi-track work there is **Rhapsode Pro**, a native desktop editor (C++, GPU compositing,
+NVDEC/NVENC): ripple, roll, slip and slide, multicam, a colour-managed grade with scopes and LUTs, a
+loudness-metered mixer, ProRes and DNxHR masters, OTIO / FCPXML / EDL / Premiere XML, and local
+transcription you can edit by deleting words. A quick-mode render opens in Pro; a Pro export publishes
+back as a share link. See [pro/README.md](pro/README.md).
+
+<p align="center"><img src="docs/assets/pro-editor.png" alt="Rhapsode Pro" width="900"></p>
 
 ## On the phone
 

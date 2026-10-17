@@ -1,6 +1,6 @@
 file(GLOB RHAP_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
 add_executable(rhap_tests ${RHAP_TEST_SOURCES})
-target_link_libraries(rhap_tests PRIVATE rhap rhap_doctest)
+target_link_libraries(rhap_tests PRIVATE rhap rhap_doctest rhap_stb)
 target_compile_definitions(rhap_tests PRIVATE RHAP_TEST_TMP="${CMAKE_BINARY_DIR}/test-tmp")
 add_test(NAME rhap_tests COMMAND rhap_tests)
 if(RHAP_APP)

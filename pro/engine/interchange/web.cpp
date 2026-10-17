@@ -2,6 +2,7 @@
 // visual tracks become picture tracks (with each clip's own sound linked on
 // a sound track), audio tracks sound tracks, text tracks titles.
 #include <cmath>
+#include <filesystem>
 #include <nlohmann/json.hpp>
 
 #include "../audio/dsp.h"
@@ -36,7 +37,12 @@ std::string readWeb(const std::string& text, const std::string& baseDir, Project
   else if (aspect == "4:5") W = 1080, H = 1350;
   auto mediaOf = [&](const std::string& id) -> Media& {
     auto it = o.sources.find(id);
-    return mediaFor(p, it == o.sources.end() ? "" : it->second, id, 0, o, baseDir);
+    if (it != o.sources.end()) return mediaFor(p, it->second, id, 0, o, baseDir);
+    // a hand-written sequence may name files instead of server ids
+    std::filesystem::path f = std::filesystem::path(id).is_absolute() ? std::filesystem::path(id) : std::filesystem::path(baseDir) / id;
+    std::error_code ec;
+    bool file = std::filesystem::exists(f, ec);
+    return mediaFor(p, file ? f.string() : "", file ? f.filename().string() : id, 0, o, baseDir);
   };
   if (aspect == "source" && canvas.contains("sourceOf")) {
     Media& m = mediaOf(canvas["sourceOf"]);
