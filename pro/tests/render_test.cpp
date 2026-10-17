@@ -5,11 +5,15 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 
 #include "gfx/color.h"
 #include "gfx/gpu.h"
 #include "media_fixtures.h"
 #include "render/renderer.h"
+
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 using namespace rhap;
 using fx::sec;
@@ -349,4 +353,41 @@ TEST_CASE("gpu: blur spreads an edge") {
   CHECK(b > d);
   CHECK(d > 0);
   CHECK(img.at(20, 10)[0] == 255);
+}
+
+TEST_CASE("gpu: phone footage tagged as rotated shows upright, as ffmpeg shows it") {
+  gfx::Gpu* g = gpu();
+  if (!g) return;
+  std::string dir = fx::mediaDir();
+  std::string flat = dir + "/halves.mp4", rot = dir + "/halves-rot90.mp4", ref = dir + "/halves-rot90.png";
+  if (!std::filesystem::exists(rot)) {
+    // left half red, right half blue, then tagged with a 90° display matrix (as phones do)
+    std::system(("ffmpeg -nostdin -loglevel error -y -f lavfi -i color=red:s=160x240:d=1 -f lavfi -i color=blue:s=160x240:d=1 "
+                 "-filter_complex hstack -c:v libx264 -preset ultrafast -pix_fmt yuv420p '" + flat + "'").c_str());
+    std::system(("ffmpeg -nostdin -loglevel error -y -display_rotation 90 -i '" + flat + "' -c copy '" + rot + "'").c_str());
+    std::system(("ffmpeg -nostdin -loglevel error -y -i '" + rot + "' -frames:v 1 '" + ref + "'").c_str());  // ffmpeg autorotates
+  }
+  Media m;
+  m.id = "rot";
+  REQUIRE(probe(rot, m).empty());
+  CHECK(m.width == 240);
+  CHECK(m.height == 320);
+  Project p = seqProject(240, 320);
+  p.media.push_back(m);
+  Editor ed(p, "main");
+  REQUIRE(ed.overwrite({TrackKind::Video, 0}, clipOf(p, m, 0)).empty());
+  DecoderPool pool(false);
+  Image img = renderRgba(*g, pool, p, sec(0.1));
+  int w, h, n;
+  unsigned char* r = stbi_load(ref.c_str(), &w, &h, &n, 4);
+  REQUIRE(r);
+  REQUIRE(w == 240);
+  REQUIRE(h == 320);
+  for (auto [x, y] : {std::pair{120, 40}, std::pair{120, 280}}) {
+    const unsigned char* q = r + (size_t(y) * w + x) * 4;
+    const uint8_t* o = img.at(x, y);
+    bool refRed = q[0] > q[2], ourRed = o[0] > o[2];
+    CHECK_MESSAGE(refRed == ourRed, "at " << x << "," << y << " ffmpeg " << (refRed ? "red" : "blue") << ", ours " << (ourRed ? "red" : "blue"));
+  }
+  stbi_image_free(r);
 }

@@ -54,9 +54,11 @@ pro/
   composite. Output transform to the display (Rec.709 / sRGB, or PQ / HLG for HDR monitoring). Titles and
   shapes are layers like any other.
 - **Colour management.** Built-in transforms for Rec.709, Rec.2020, Display P3, PQ, HLG, sRGB and an ACEScct
-  working space. OpenColorIO is optional at build time: when present, configs load through it.
-- **Scopes.** Waveform, RGB parade, vectorscope and histogram computed on the GPU from the composited frame,
-  every frame, checked against a CPU reference in tests.
+  working space (AP1 primaries, ACEScct grading curve). This is not a full ACES pipeline: there is no RRT/ODT,
+  and OpenColorIO is not linked yet (it is not packaged on this machine).
+- **Scopes.** Waveform, RGB parade, vectorscope and histogram. The GPU downscales the composited frame to
+  480×270; the counts are taken on the CPU from that (every sixth frame while playing). A compute-shader
+  path is a later step if the CPU ever becomes the limit.
 - **Audio.** Decode to 48 kHz float, a mixer of tracks and buses with gain / pan keyframes, track FX (EQ,
   compressor, gate, limiter, de-noise), a BS.1770-4 meter (momentary, short-term, integrated, true peak, LRA),
   normalise-to-target, auto-duck from dialogue to music. The audio device clock drives playback.
@@ -65,11 +67,13 @@ pro/
   render`), so a crash in an export never takes the editor down, and they queue.
 - **Smart render.** Exports are cut into closed-GOP segments keyed by a hash of everything that affects their
   pixels and samples; an unchanged segment is reused from the last export, not re-encoded.
-- **Project files.** JSON, written to a temp file, fsynced and renamed; the previous five versions are kept.
-  An append-only edit journal beside the project is replayed after a crash.
+- **Project files.** JSON with a checksum, written to a temp file, fsynced and renamed; the previous five
+  versions are kept. An autosave beside the project is written two seconds after the last change (atomic,
+  checksummed like the project) and offered on the next open. A journal was planned; the autosave met the
+  bar without one.
 - **Interchange.** OTIO, FCPXML 1.10, CMX 3600 EDL export and import; Premiere / FCP7 XML (xmeml) import.
   The web studio's sequence JSON opens directly.
-- **Local AI.** whisper.cpp with CUDA for transcripts with word times; the transcript is an editing surface
+- **Local AI.** whisper.cpp for transcripts with word times (CPU build here; CUDA is a build flag); the transcript is an editing surface
   (delete words → ripple delete). Silence, scene and loudness analysis in the engine. Background matte and
   voice isolation run local models (Demucs is already used by quick mode). No network calls, no accounts.
 
@@ -133,3 +137,11 @@ Machine measurements: playback fps and dropped frames on the M2 timeline, export
 seek latency, time to first frame after opening a project. Compared with Kdenlive (installed from Flathub)
 and with ffmpeg as a floor. Resolve and Premiere are not installed on this machine; where they are compared,
 the comparison is with their documented workflow, never with invented numbers.
+
+## Status (2026-10-16)
+
+Built and tested: M1 in full; M2 except the playback bar, which is measured and recorded in
+[BENCHMARKS.md](../BENCHMARKS.md) when the GPU is free of other work; M3 (scopes on the CPU as above,
+no OCIO); M4 except motion paths drawn on the viewer and title templates; M5 (transcription, text editing,
+captions, silence, scenes, reframe, background removal, noise reduction, voice isolation); M6 except
+smart render. The tests named in [pro/README.md](../../pro/README.md#tests) are the proof for each.

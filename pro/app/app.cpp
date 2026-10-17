@@ -198,6 +198,8 @@ void App::frame(SDL_GPUCommandBuffer* cmd) {
   }
 
   ImGui::DockSpaceOverViewport(kDockId, ImGui::GetMainViewport());
+  static int frames = 0;
+  if (++frames == 3) ImGui::SetWindowFocus("Media");  // the bin is the tab to start on
   menu();
   viewer(cmd);
   timeline();
