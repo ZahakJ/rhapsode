@@ -54,7 +54,7 @@ for i in range(1, len(srcs)):
 x.append('</tractor></mlt>')
 print("\n".join(x))
 PY
-MELT="flatpak run --filesystem=$B --command=melt org.kde.kdenlive"
+MELT="flatpak run --env=QT_QPA_PLATFORM=offscreen --filesystem=$B --command=melt org.kde.kdenlive"  # qtblend needs Qt, offscreen
 info "kdenlive: throughput to a null consumer (its playback engine, unthrottled)"
 /usr/bin/time -f '{"wall_s": %e, "max_rss_kb": %M}' $MELT "$B/bench.mlt" -consumer null real_time=-4 terminate_on_pause=1 \
   > /dev/null 2> "$B/melt-null.log" || true
