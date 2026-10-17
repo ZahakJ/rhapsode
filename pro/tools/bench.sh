@@ -1,6 +1,7 @@
 #!/bin/sh
-# The benchmark campaign behind docs/BENCHMARKS.md. Run it holding the machine's GPU lock:
-#   flock /tmp/side-gpu.lock sh pro/tools/bench.sh
+# The benchmark campaign behind docs/BENCHMARKS.md:  sh pro/tools/bench.sh
+# The GPU is shared: every GPU step takes the lock on its own, only once the GPU has been idle for a
+# minute (tools/when-gpu-idle.sh), stays well under ten minutes, and the next waits two minutes after it.
 # Everything is measured on this machine, the same composition in each tool:
 # three 4K60 HEVC 10-bit tracks, the base full frame, two graded, scaled, rotated PiPs.
 set -eu
@@ -11,6 +12,7 @@ BIN="$PRO/build/bin"; OUT="$PRO/../docs/benchmarks"; B="$PRO/build/bench"
 mkdir -p "$OUT" "$B"
 export RPRO_HOLDS_GPU_LOCK=1
 cd "$PRO"
+gpu() { sh "$PRO/tools/when-gpu-idle.sh" "$@"; sleep 120; }
 info() { echo "== $*" >&2; }
 { nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader; lscpu | grep "Model name"; uname -r; } > "$OUT/machine.txt"
 # what else is on the GPU, at the start and the end: a number measured beside another job says so
@@ -19,26 +21,26 @@ gpustate start > "$OUT/gpu-state.txt"
 trap 'gpustate end >> "$OUT/gpu-state.txt"' EXIT
 
 info "sources"
-"$BIN/rpro" bench playback --prepare
+gpu "$BIN/rpro" bench playback --prepare
 info "rhapsode pro: paced playback (real time, 60 s)"
-"$BIN/rpro" bench playback > "$OUT/pro-playback-4k60x3.json"
+gpu sh -c "'$BIN/rpro' bench playback > '$OUT/pro-playback-4k60x3.json'"
 info "rhapsode pro: paced playback with all-intra proxies (seek latency)"
-"$BIN/rpro" bench playback --proxies > "$OUT/pro-playback-4k60x3-proxies.json" || echo "proxies run failed" >&2
+gpu sh -c "'$BIN/rpro' bench playback --proxies > '$OUT/pro-playback-4k60x3-proxies.json'" || echo "proxies run failed" >&2
 info "rhapsode pro: unpaced throughput"
-"$BIN/rpro" bench playback --unpaced > "$OUT/pro-throughput-4k60x3.json"
+gpu sh -c "'$BIN/rpro' bench playback --unpaced > '$OUT/pro-throughput-4k60x3.json'"
 info "rhapsode pro: 1080p30 H.264, 3 tracks"
-"$BIN/rpro" bench playback --size 1920x1080 --fps 30 --codec h264 > "$OUT/pro-playback-1080p30x3.json"
+gpu sh -c "'$BIN/rpro' bench playback --size 1920x1080 --fps 30 --codec h264 > '$OUT/pro-playback-1080p30x3.json'"
 info "rhapsode pro: export HEVC 10-bit 4K (NVENC)"
-"$BIN/rpro" bench export --preset youtube-4k > "$OUT/pro-export-4k-hevc.json"
+gpu sh -c "'$BIN/rpro' bench export --preset youtube-4k --limit 20 > '$OUT/pro-export-4k-hevc.json'"
 info "rhapsode pro: export ProRes 422 HQ 4K"
-"$BIN/rpro" bench export --preset prores-hq > "$OUT/pro-export-4k-prores.json"
+gpu sh -c "'$BIN/rpro' bench export --preset prores-hq --limit 20 > '$OUT/pro-export-4k-prores.json'"
 
 info "kdenlive (MLT $(flatpak run --command=melt org.kde.kdenlive -version 2>&1 | head -1))"
 python3 - "$B" > "$B/bench.mlt" <<'PY'
 import sys, glob, os
 b = sys.argv[1]
 srcs = sorted(glob.glob(os.path.join(b, "src[0-9]-hevc10-3840x2160p60-60s.mp4")))[:3]
-n = 3600
+n = 1200  # 20 s: the same stretch the exports measure
 rects = ["0 0 3840 2160 1", "1901 162 1728 972 1", "211 1026 1728 972 1"]  # the base, then the PiPs as rpro places them
 x = ['<?xml version="1.0" encoding="utf-8"?>', '<mlt LC_NUMERIC="C" version="7.0.0">',
      '<profile description="4K60" width="3840" height="2160" progressive="1" sample_aspect_num="1" sample_aspect_den="1" '
@@ -62,20 +64,20 @@ print("\n".join(x))
 PY
 MELT="flatpak run --env=QT_QPA_PLATFORM=offscreen --filesystem=$B --command=melt org.kde.kdenlive"  # qtblend needs Qt, offscreen
 info "kdenlive: throughput to a null consumer (its playback engine, unthrottled)"
-python3 tools/timeit.py "$OUT/kdenlive-throughput-4k60x3.json" frames=3600 -- $MELT "$B/bench.mlt" -consumer null real_time=-4 \
+gpu python3 tools/timeit.py "$OUT/kdenlive-throughput-4k60x3.json" frames=1200 -- $MELT "$B/bench.mlt" -consumer null real_time=-4 \
   terminate_on_pause=1 > /dev/null 2> "$B/melt-null.log" || true
 info "kdenlive: export HEVC (the best encoder its flatpak offers)"
 VC=$($MELT -query video_codecs 2>/dev/null | grep -oE "hevc_nvenc|libx265" | head -1 || echo libx265)
-python3 tools/timeit.py "$OUT/kdenlive-export-4k-hevc.json" frames=3600 vcodec=$VC -- $MELT "$B/bench.mlt" \
+gpu python3 tools/timeit.py "$OUT/kdenlive-export-4k-hevc.json" frames=1200 vcodec=$VC -- $MELT "$B/bench.mlt" \
   -consumer avformat:"$B/kdenlive-export.mp4" vcodec=$VC pix_fmt=p010le vb=40M acodec=aac real_time=-4 \
   > /dev/null 2> "$B/melt-export.log" || true
 
 info "ffmpeg floor: the same composition as one filter graph, NVDEC + NVENC"
 S0=$(ls "$B"/src0-hevc10-3840x2160p60-60s.mp4); S1=$(ls "$B"/src1-hevc10-3840x2160p60-60s.mp4); S2=$(ls "$B"/src2-hevc10-3840x2160p60-60s.mp4)
-python3 tools/timeit.py "$OUT/ffmpeg-floor-4k-hevc.json" frames=3600 -- ffmpeg -nostdin -loglevel error -y -hwaccel cuda -i "$S0" -hwaccel cuda -i "$S1" -hwaccel cuda -i "$S2" \
+gpu python3 tools/timeit.py "$OUT/ffmpeg-floor-4k-hevc.json" frames=1200 -- ffmpeg -nostdin -loglevel error -y -t 20 -hwaccel cuda -i "$S0" -hwaccel cuda -i "$S1" -hwaccel cuda -i "$S2" \
   -filter_complex "[1]eq=saturation=1.2,scale=1728:-2,rotate=3*PI/180:c=none:ow=rotw(3*PI/180):oh=roth(3*PI/180)[a];[2]eq=saturation=1.2,scale=1728:-2,rotate=6*PI/180:c=none:ow=rotw(6*PI/180):oh=roth(6*PI/180)[b];[0][a]overlay=1901:162[o];[o][b]overlay=211:1026,format=p010le" \
   -c:v hevc_nvenc -profile:v main10 -preset p5 -cq 21 -c:a aac "$B/ffmpeg-floor.mp4" 2> "$B/ffmpeg-floor.log" || true
 info "task 1: a 20-minute interview to about 5 minutes with captions"
 rm -rf "$B/interview"
-"$BIN/rpro" bench interview --minutes 20 > "$OUT/pro-task-interview.json"
+gpu sh -c "'$BIN/rpro' bench interview --minutes 20 > '$OUT/pro-task-interview.json'"
 info "done"
