@@ -12,6 +12,7 @@
 #include "engine/ai/transcribe.h"
 #include "engine/audio/mixer.h"
 #include "engine/interchange/interchange.h"
+#include "engine/gfx/ocio.h"
 #include "engine/io/project_io.h"
 #include "engine/model/templates.h"
 #include "engine/net/web.h"
@@ -1016,7 +1017,36 @@ void App::inspector() {
       const char* os[] = {"Rec.709", "sRGB", "Rec.2020 PQ", "Rec.2020 HLG"};
       int w = int(s_.project.working), o = int(s_.project.output);
       if (ImGui::Combo("Working space", &w, ws, 3)) s_.project.working = WorkingSpace(w), ++s_.revision;
-      if (ImGui::Combo("Output", &o, os, 4)) s_.project.output = OutputSpace(o), ++s_.revision;
+      bool aces = !s_.project.ocio.config.empty();
+      ImGui::BeginDisabled(!ocio::available());
+      if (ImGui::Checkbox("OCIO colour management (ACES 2.0)", &aces)) {
+        s_.history.push(s_.project, "colour management");
+        if (aces) s_.project.ocio = {ocio::defaultConfig(), "Rec.1886 Rec.709 - Display", "ACES 2.0 - SDR 100 nits (Rec.709)"},
+                  s_.project.working = WorkingSpace::ACEScct;
+        else s_.project.ocio = {};
+        ++s_.revision;
+      }
+      ImGui::EndDisabled();
+      if (aces) {
+        auto& cm = s_.project.ocio;
+        if (ImGui::BeginCombo("Display", cm.display.c_str())) {
+          for (auto& d : ocio::displays(cm.config))
+            if (ImGui::Selectable(d.c_str(), d == cm.display)) {
+              cm.display = d;
+              auto v = ocio::views(cm.config, d);
+              if (!v.empty()) cm.view = v[0];
+              ++s_.revision;
+            }
+          ImGui::EndCombo();
+        }
+        if (ImGui::BeginCombo("View", cm.view.c_str())) {
+          for (auto& v : ocio::views(cm.config, cm.display))
+            if (ImGui::Selectable(v.c_str(), v == cm.view)) cm.view = v, ++s_.revision;
+          ImGui::EndCombo();
+        }
+      } else if (ImGui::Combo("Output", &o, os, 4)) {
+        s_.project.output = OutputSpace(o), ++s_.revision;
+      }
       ImGui::TextDisabled("Select a clip to edit it.");
     }
     ImGui::End();
@@ -1059,6 +1089,23 @@ void App::inspector() {
     if (ImGui::Combo("Blend", &b, blends, 4)) editClip("blend", [&](Clip& k) { k.blend = Blend(b); });
   }
   if (onVideo && isPicture && ImGui::CollapsingHeader("Colour", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (c->kind == ClipKind::Media && ocio::available()) {
+      // the camera's encoding, read through OCIO (empty: the file's own tags)
+      Media* mm = nullptr;
+      for (auto& x : s_.project.media)
+        if (x.id == c->ref) mm = &x;
+      if (mm && ImGui::BeginCombo("Source colourspace", mm->colorspace.empty() ? "from the file" : mm->colorspace.c_str())) {
+        if (ImGui::Selectable("from the file", mm->colorspace.empty())) mm->colorspace.clear(), ++s_.revision;
+        std::string cfg = s_.project.ocio.config.empty() ? ocio::defaultConfig() : s_.project.ocio.config;
+        for (auto& sp : ocio::inputSpaces(cfg))
+          if (ImGui::Selectable(sp.c_str(), sp == mm->colorspace)) {
+            s_.history.push(s_.project, "source colourspace");
+            mm->colorspace = sp;
+            ++s_.revision;
+          }
+        ImGui::EndCombo();
+      }
+    }
     Grade g = c->grade;
     bool ch = false;
     auto trio = [&](const char* name, std::array<double, 3>& v, float sp, float lo, float hi) {

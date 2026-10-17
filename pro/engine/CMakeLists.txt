@@ -3,7 +3,7 @@ add_library(rhap STATIC
   model/model.cpp model/edit.cpp model/templates.cpp
   io/project_io.cpp
   media/decode.cpp media/prefetch.cpp
-  gfx/color.cpp gfx/gpu.cpp gfx/text.cpp
+  gfx/color.cpp gfx/gpu.cpp gfx/text.cpp gfx/ocio.cpp
   render/evaluate.cpp render/renderer.cpp
   audio/dsp.cpp audio/mixer.cpp
   render/export.cpp
@@ -38,4 +38,20 @@ if(EXISTS "${RHAP_WHISPER_DIR}/CMakeLists.txt")
   message(STATUS "rhap: transcription with whisper.cpp (CUDA ${RHAP_WHISPER_CUDA})")
 else()
   message(STATUS "rhap: no whisper.cpp at ${RHAP_WHISPER_DIR}; transcription disabled")
+endif()
+
+# OCIO colour management (ACES 2.0 configs built in), built into the build dir (see pro/README.md)
+set(RHAP_OCIO_DIR "${CMAKE_BINARY_DIR}/ocio" CACHE PATH "OpenColorIO install prefix")
+if(EXISTS "${RHAP_OCIO_DIR}/lib/libOpenColorIO.a")
+  pkg_check_modules(ZNG REQUIRED IMPORTED_TARGET zlib-ng)
+  find_package(EXPAT REQUIRED)
+  find_package(Imath REQUIRED)
+  set(_ext "${CMAKE_BINARY_DIR}/ocio-build/ext/dist/lib")
+  target_include_directories(rhap PUBLIC ${RHAP_OCIO_DIR}/include)
+  target_link_libraries(rhap PUBLIC ${RHAP_OCIO_DIR}/lib/libOpenColorIO.a ${_ext}/libyaml-cpp.a ${_ext}/libpystring.a
+                        ${_ext}/libminizip-ng.a PkgConfig::ZNG EXPAT::EXPAT Imath::Imath)
+  target_compile_definitions(rhap PUBLIC RHAP_OCIO=1)
+  message(STATUS "rhap: OCIO colour management from ${RHAP_OCIO_DIR}")
+else()
+  message(STATUS "rhap: no OCIO at ${RHAP_OCIO_DIR}; Rhapsode's own colour transforms only")
 endif()

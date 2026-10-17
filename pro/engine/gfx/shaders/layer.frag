@@ -11,6 +11,7 @@ layout(set = 2, binding = 1) uniform sampler2D s_plane1;
 layout(set = 2, binding = 2) uniform sampler2D s_plane2;
 layout(set = 2, binding = 3) uniform sampler2D s_curves;  // N×1, rgb = per-channel curve after master
 layout(set = 2, binding = 4) uniform sampler3D s_lut;
+layout(set = 2, binding = 5) uniform sampler3D s_inLut;  // OCIO input transform: encoded source -> ACEScct
 
 layout(set = 3, binding = 0) uniform Layer {
   vec4 u_yuvR, u_yuvG, u_yuvB;  // (y, cb, cr, 1) → R'G'B'
@@ -24,6 +25,7 @@ layout(set = 3, binding = 0) uniform Layer {
   vec4 u_lutInv;  // xyz 1 / (max − min), w curve table size
   vec4 u_fill;    // fill colour (working linear, straight alpha)
   vec4 u_shape;   // x shape (0 none, 1 rect, 2 ellipse), y feather in uv, z corner radius in uv
+  vec4 u_inLut;   // x on, y size
 };
 
 float shapeMask(vec2 uv) {
@@ -74,7 +76,13 @@ void main() {
       vec4 q = vec4(yuv * u_p0.z, 1.0);
       rgb = vec3(dot(u_yuvR, q), dot(u_yuvG, q), dot(u_yuvB, q));
     }
-    vec3 l = toLinear(int(u_p0.y), rgb);
+    vec3 l;
+    if (u_inLut.x > 0.5) {
+      float n = u_inLut.y;
+      l = toLinear(7, texture(s_inLut, (clamp(rgb, 0.0, 1.0) * (n - 1.0) + 0.5) / n).rgb);  // ACEScct -> linear AP1
+    } else {
+      l = toLinear(int(u_p0.y), rgb);
+    }
     lin = vec3(dot(u_gamR.xyz, l), dot(u_gamG.xyz, l), dot(u_gamB.xyz, l));
     a *= shapeMask(v_uv);
   }

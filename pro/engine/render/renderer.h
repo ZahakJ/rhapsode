@@ -91,12 +91,15 @@ class Renderer {
   gfx::Texture& scratch(int depth, int index, int w, int h);
   void drawQuad(SDL_GPURenderPass* pass, SDL_GPUCommandBuffer* cmd, const Prep& pr, SDL_GPUTextureFormat fmt);
   void pass(SDL_GPUCommandBuffer* cmd, const gfx::Texture& src, gfx::Texture& dst, const void* uniforms, size_t size,
-            SDL_GPUGraphicsPipeline* pipe);
+            SDL_GPUGraphicsPipeline* pipe, const gfx::Texture* second = nullptr);
+  /** an OCIO transform baked to a 3D LUT texture, cached; null when OCIO is absent or the names are wrong */
+  const gfx::Texture* ocioLut(SDL_GPUCommandBuffer* cmd, const std::string& key, bool output, const std::string& config, const std::string& a,
+                              const std::string& b);
 
   gfx::Gpu& gpu_;
   FrameSource& frames_;
   std::map<std::string, std::unique_ptr<SlotTex>> slots_;
-  std::map<std::string, gfx::Texture> titles_, curves_, luts_;
+  std::map<std::string, gfx::Texture> titles_, curves_, luts_, ocioLuts_;
   std::map<std::string, color::Lut3D> lutData_;
   std::map<std::pair<int, int>, gfx::Texture> scratch_;  // map: references stay valid as it grows
   RenderStats stats_;

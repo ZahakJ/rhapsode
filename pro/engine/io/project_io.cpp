@@ -78,7 +78,7 @@ void from_json(const json& j, Param& p) {
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(ColorInfo, primaries, transfer, matrix, range, bitDepth)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Media, id, path, proxy, name, kind, duration, rate, vfr, width, height,
                                                 hasVideo, hasAudio, channels, sampleRate, videoCodec, audioCodec, color,
-                                                startTimecode)
+                                                startTimecode, colorspace)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Transform, x, y, scale, scaleY, rotation, anchorX, anchorY, opacity,
                                                 cropL, cropR, cropT, cropB, flipH, flipV)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(CurvePoint, x, y)
@@ -98,9 +98,10 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Marker, id, t, dur, name, note, 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Sequence, id, name, width, height, rate, sampleRate, background, video,
                                                 audio, markers, multicam)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Word, a, b, text, p)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(ColorManagement, config, display, view)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Transcript, media, language, words)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Project, version, name, media, sequences, active, working, output,
-                                                nextId, transcripts)
+                                                nextId, transcripts, ocio)
 
 json toJson(const Project& p) { return p; }
 json clipJson(const Clip& c) { return c; }

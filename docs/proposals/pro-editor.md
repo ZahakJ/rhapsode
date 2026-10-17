@@ -54,8 +54,10 @@ pro/
   composite. Output transform to the display (Rec.709 / sRGB, or PQ / HLG for HDR monitoring). Titles and
   shapes are layers like any other.
 - **Colour management.** Built-in transforms for Rec.709, Rec.2020, Display P3, PQ, HLG, sRGB and an ACEScct
-  working space (AP1 primaries, ACEScct grading curve). This is not a full ACES pipeline: there is no RRT/ODT,
-  and OpenColorIO is not linked yet (it is not packaged on this machine).
+  working space (AP1 primaries, ACEScct grading curve). With OpenColorIO (2.5, built into the build dir) the
+  output goes through any display/view of its built-in ACES 2.0 studio config, SDR and HDR, and a clip can be
+  tagged with its camera encoding (S-Log3, LogC3/4, V-Log, Canon Log, Apple Log, …). Both transforms are baked
+  to 65³ LUTs on a log (ACEScct) signal and checked against OCIO's own CPU processor.
 - **Scopes.** Waveform, RGB parade, vectorscope and histogram. The GPU downscales the composited frame to
   480×270; the counts are taken on the CPU from that (every sixth frame while playing). A compute-shader
   path is a later step if the CPU ever becomes the limit.
@@ -141,7 +143,6 @@ the comparison is with their documented workflow, never with invented numbers.
 ## Status (2026-10-16)
 
 Built and tested: M1 in full; M2 except the playback bar, which is measured and recorded in
-[BENCHMARKS.md](../BENCHMARKS.md) when the GPU is free of other work; M3 (scopes on the CPU as above,
-no OCIO); M4 except motion paths drawn on the viewer and title templates; M5 (transcription, text editing,
+[BENCHMARKS.md](../BENCHMARKS.md) when the GPU is free of other work; M3 (scopes on the CPU as above); M4 except motion paths drawn on the viewer and title templates; M5 (transcription, text editing,
 captions, silence, scenes, reframe, background removal, noise reduction, voice isolation); M6 except
 smart render. The tests named in [pro/README.md](../../pro/README.md#tests) are the proof for each.
