@@ -25,6 +25,7 @@
 #include "engine/media/decode.h"
 #include "engine/media/prefetch.h"
 #include "engine/model/edit.h"
+#include "engine/net/web.h"
 #include "engine/render/export.h"
 #include "engine/render/renderer.h"
 #include "interchange/interchange.h"
@@ -43,6 +44,8 @@ int usage() {
                "  rpro export PROJECT PRESET OUT [--in S] [--out S] [--sw-decode]\n"
                "  rpro frame PROJECT SECONDS OUT.png     render one frame\n"
                "  rpro transcribe FILE [--lang L] [--model M] [--threads N] [--cpu] [--srt OUT]\n"
+               "  rpro open-web SHARE-URL OUT.rpro       a quick-mode render as a Pro project (RHAPSODE_KEY)\n"
+               "  rpro publish FILE.mp4 --server URL [--title T]   a share link for a finished file (RHAPSODE_KEY)\n"
                "  rpro info PROJECT                      tracks and clips as JSON\n"
                "  rpro loudness PROJECT                  integrated loudness of the active sequence\n"
                "  rpro convert IN OUT                    project interchange (.rpro .otio .fcpxml .edl .xml)\n"
@@ -148,6 +151,8 @@ int cmdNew(int argc, char** argv) {
   return 0;
 }
 
+web::Remote remoteFrom(int argc, char** argv, const std::string& server);
+
 int cmdExport(int argc, char** argv) {
   if (argc < 5) return usage();
   ExportJob job;
@@ -177,10 +182,20 @@ int cmdExport(int argc, char** argv) {
     return 1;
   }
   double el = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-  std::printf("%s\n", nlohmann::json{{"path", job.path}, {"frames", sum.total}, {"seconds", el}, {"fps", sum.fps},
-                                     {"encoder", sum.encoder}}
-                          .dump()
-                          .c_str());
+  nlohmann::json res{{"path", job.path}, {"frames", sum.total}, {"seconds", el}, {"fps", sum.fps}, {"encoder", sum.encoder}};
+  std::string pubServer = arg(argc, argv, "--publish", "");
+  if (!pubServer.empty()) {
+    web::Remote r = remoteFrom(argc, argv, pubServer);
+    std::string link;
+    std::string pe = web::publish(r, job.path, arg(argc, argv, "--title", job.project.name), link);
+    if (!pe.empty()) {
+      std::fprintf(stderr, "rpro: %s\n", pe.c_str());
+      return 1;
+    }
+    res["shareUrl"] = link;
+    std::fprintf(stderr, "published: %s\n", link.c_str());
+  }
+  std::printf("%s\n", res.dump().c_str());
   return 0;
 }
 
@@ -263,6 +278,57 @@ int cmdTranscribe(int argc, char** argv) {
                                       {"realtime_x", toSeconds(m.duration) / el}, {"text", text}}
                           .dump(1)
                           .c_str());
+  return 0;
+}
+
+web::Remote remoteFrom(int argc, char** argv, const std::string& server) {
+  web::Remote r;
+  r.server = server.empty() ? arg(argc, argv, "--server", std::getenv("RHAPSODE_SERVER") ? std::getenv("RHAPSODE_SERVER") : "") : server;
+  while (!r.server.empty() && r.server.back() == '/') r.server.pop_back();
+  const char* k = std::getenv("RHAPSODE_KEY");  // never on the command line
+  r.key = k ? k : "";
+  return r;
+}
+
+int cmdOpenWeb(int argc, char** argv) {
+  if (argc < 4) return usage();
+  std::string server, slug;
+  if (!web::parseShareUrl(argv[2], arg(argc, argv, "--server", std::getenv("RHAPSODE_SERVER") ? std::getenv("RHAPSODE_SERVER") : ""), server, slug)) {
+    std::fprintf(stderr, "rpro: give a share link (https://host/m/slug) or a slug with --server\n");
+    return 1;
+  }
+  web::Remote r = remoteFrom(argc, argv, server);
+  if (r.key.empty()) {
+    std::fprintf(stderr, "rpro: set RHAPSODE_KEY to the invite key\n");
+    return 1;
+  }
+  std::string out = argv[3];
+  std::string media = (fs::path(out).parent_path() / (fs::path(out).stem().string() + "-media")).string();
+  Project p;
+  std::string e = web::openRender(r, slug, media, p, [](const std::string& m) { std::fprintf(stderr, "%s\n", m.c_str()); });
+  if (e.empty()) e = saveProject(p, out);
+  if (!e.empty()) {
+    std::fprintf(stderr, "rpro: %s\n", e.c_str());
+    return 1;
+  }
+  std::printf("%s: %zu media, %.2f s\n", out.c_str(), p.media.size(), toSeconds(p.findSequence(p.active)->duration()));
+  return 0;
+}
+
+int cmdPublish(int argc, char** argv) {
+  if (argc < 3) return usage();
+  web::Remote r = remoteFrom(argc, argv, "");
+  if (r.server.empty() || r.key.empty()) {
+    std::fprintf(stderr, "rpro: needs --server URL and RHAPSODE_KEY\n");
+    return 1;
+  }
+  std::string link;
+  std::string e = web::publish(r, argv[2], arg(argc, argv, "--title", fs::path(argv[2]).stem().string()), link);
+  if (!e.empty()) {
+    std::fprintf(stderr, "rpro: %s\n", e.c_str());
+    return 1;
+  }
+  std::printf("%s\n", link.c_str());
   return 0;
 }
 
@@ -521,6 +587,8 @@ int main(int argc, char** argv) {
   if (c == "loudness") return cmdLoudness(argc, argv);
   if (c == "info") return cmdInfo(argc, argv);
   if (c == "transcribe") return cmdTranscribe(argc, argv);
+  if (c == "open-web") return cmdOpenWeb(argc, argv);
+  if (c == "publish") return cmdPublish(argc, argv);
   if (c == "convert") return cmdConvert(argc, argv);
   if (c == "bench" && argc > 2 && std::string(argv[2]) == "playback") return cmdBenchPlayback(argc, argv);
   if (c == "bench" && argc > 2 && std::string(argv[2]) == "export") return cmdBenchExport(argc, argv);

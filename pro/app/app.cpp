@@ -13,6 +13,10 @@
 #include "engine/audio/mixer.h"
 #include "engine/interchange/interchange.h"
 #include "engine/io/project_io.h"
+#include "engine/net/web.h"
+#include <fstream>
+#include <nlohmann/json.hpp>
+#include <sys/stat.h>
 #include "engine/render/export.h"
 
 namespace rhap::app {
@@ -49,6 +53,7 @@ int modsOf(SDL_Keymod m) {
 
 App::App(SDL_Window* w, gfx::Gpu& gpu)
     : window_(w), gpu_(gpu), frames_(true, 8), renderer_(gpu, frames_), player_(s_) {
+  loadWebSettings();
   auto use = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
   scopeSrc_ = gpu_.make(480, 270, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, use);
   waveTex_ = gpu_.make(480, 256, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREUSAGE_SAMPLER);
@@ -205,6 +210,7 @@ void App::frame(SDL_GPUCommandBuffer* cmd) {
   statusBar();
   if (showShortcuts_) shortcutsWindow();
   if (showRecovery_) recoveryModal();
+  if (showWeb_) webModal();
 
   std::string title = "Rhapsode Pro — " + (s_.path.empty() ? std::string("untitled") : fs::path(s_.path).filename().string()) +
                       (s_.dirty() ? " •" : "");
@@ -232,6 +238,7 @@ void App::menu() {
       dialogTag_ = "save";
       SDL_ShowSaveFileDialog(&App::onDialog, this, window_, nullptr, 0, nullptr);
     }
+    if (ImGui::MenuItem("Open a quick-mode render…")) showWeb_ = true;
     ImGui::Separator();
     if (ImGui::MenuItem("Import media…", "Ctrl+I")) {
       dialogTag_ = "import";
@@ -1161,6 +1168,10 @@ void App::queueExport(const std::string& presetId, const std::string& out, bool 
   j.title = fs::path(out).filename().string() + " · " + presetId;
   j.output = out;
   j.argv = {rproPath(), "export", snap, presetId, out};
+  if (publishExport_ && !webServer_.empty()) {
+    j.argv.insert(j.argv.end(), {"--publish", webServer_, "--title", s_.project.name});
+    j.title += " → share link";
+  }
   if (marks && s_.markIn >= 0 && s_.markOut > s_.markIn) {
     j.argv.insert(j.argv.end(), {"--in", std::to_string(toSeconds(s_.markIn)), "--out", std::to_string(toSeconds(s_.markOut))});
   }
@@ -1183,6 +1194,10 @@ void App::exportPanel() {
   }
   ImGui::InputText("File", &exportPath_);
   ImGui::Checkbox("In to out only", &exportMarks_);
+  ImGui::BeginDisabled(webServer_.empty() || webKey_.empty());
+  ImGui::Checkbox("Publish to a share link when done", &publishExport_);
+  ImGui::EndDisabled();
+  if (webServer_.empty()) ImGui::TextDisabled("Set the Rhapsode server in File ▸ Open a quick-mode render to publish.");
   if (ImGui::Button("Queue export")) {
     std::error_code ec;
     fs::create_directories(fs::path(exportPath_).parent_path(), ec);
@@ -1412,6 +1427,72 @@ void App::transcriptPanel() {
   }
   ImGui::EndChild();
   ImGui::End();
+}
+
+}  // namespace rhap::app
+
+namespace rhap::app {
+
+void App::loadWebSettings() {
+  const char* home = std::getenv("HOME");
+  fs::path f = fs::path(home ? home : ".") / ".config" / "rhapsode-pro-web.json";
+  std::ifstream in(f);
+  if (!in) return;
+  try {
+    auto j = nlohmann::json::parse(in);
+    webServer_ = j.value("server", "");
+    webKey_ = j.value("key", "");
+  } catch (...) {
+  }
+  if (!webKey_.empty()) setenv("RHAPSODE_KEY", webKey_.c_str(), 1);  // children (exports) read it from here
+}
+
+void App::saveWebSettings() {
+  const char* home = std::getenv("HOME");
+  fs::path f = fs::path(home ? home : ".") / ".config" / "rhapsode-pro-web.json";
+  std::error_code ec;
+  fs::create_directories(f.parent_path(), ec);
+  if (writeAtomic(f.string(), nlohmann::json{{"server", webServer_}, {"key", webKey_}}.dump()).empty()) chmod(f.c_str(), 0600);
+  if (!webKey_.empty()) setenv("RHAPSODE_KEY", webKey_.c_str(), 1);
+}
+
+void App::webModal() {
+  ImGui::OpenPopup("Open a quick-mode render");
+  ImGui::SetNextWindowSize(ImVec2(560, 0));
+  if (ImGui::BeginPopupModal("Open a quick-mode render", &showWeb_)) {
+    ImGui::TextWrapped("Paste a share link from Rhapsode quick mode. Its original pieces download beside the new project.");
+    ImGui::InputText("Share link", &webLink_);
+    ImGui::InputText("Server", &webServer_);
+    ImGui::InputText("Invite key", &webKey_, ImGuiInputTextFlags_Password);
+    if (ImGui::Button("Open")) {
+      std::string server, slug;
+      if (!web::parseShareUrl(webLink_, webServer_, server, slug)) {
+        s_.status = "that is not a share link";
+      } else {
+        if (webServer_.empty()) webServer_ = server;
+        saveWebSettings();
+        web::Remote r{server, webKey_};
+        const char* home = std::getenv("HOME");
+        fs::path dir = fs::path(home ? home : ".") / "Videos" / "rhapsode" / slug;
+        std::string project = (dir / (slug + ".rpro")).string();
+        task("open " + slug,
+             [r, slug, dir, project] {
+               Project p;
+               std::string e = web::openRender(r, slug, (dir / "media").string(), p);
+               return e.empty() ? saveProject(p, project) : e;
+             },
+             [this, project] { openPath(project); });
+        showWeb_ = false;
+        ImGui::CloseCurrentPopup();
+      }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel")) {
+      showWeb_ = false;
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+  }
 }
 
 }  // namespace rhap::app

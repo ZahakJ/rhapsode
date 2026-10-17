@@ -1,10 +1,18 @@
+import fs from "node:fs"
+import path from "node:path"
+import { Readable } from "node:stream"
+import { pipeline } from "node:stream/promises"
 import { Hono } from "hono"
+import { sequenceFromRecipe } from "../../shared/convert.ts"
 import { z } from "zod"
 import { createRenderSchema, type Recipe, type RenderPage } from "../../shared/recipe.ts"
 import { createSequenceRenderSchema, sequenceDurationOf, type Sequence } from "../../shared/sequence.ts"
 import type { Config } from "../config.ts"
 import type { JobQueue } from "../jobs.ts"
 import { payloadSources, type RenderPayload } from "../render/run.ts"
+import { sniff } from "../sniff.ts"
+import { ffprobe } from "../sources/probe.ts"
+import { makePoster } from "../sources/proxy.ts"
 import type { SourceRow, Store } from "../store.ts"
 
 export function rendersRoutes(store: Store, config: Config, queue: JobQueue, requireKey: (c: never, next: never) => Promise<unknown>): Hono {
@@ -50,10 +58,96 @@ export function rendersRoutes(store: Store, config: Config, queue: JobQueue, req
     const row = store.renderBySlug(c.req.param("slug"))
     if (!row) return c.json({ error: "not found" }, 404)
     const stored = parseStored(row.recipe_json)
+    if (stored.pro) return c.json({ error: "made in Rhapsode Pro — open its project there" }, 409)
     const ids = payloadSources({ slug: row.slug, title: row.title, ...stored })
     const sources = ids.map((id) => store.sourceById(id)).filter((s): s is SourceRow => !!s && s.status === "ready")
     if (sources.length < ids.length) return c.json({ error: "a source of this render was swept — add it again", ...stored }, 404)
-    return c.json({ ...stored, title: row.title, sources: sources.map((s) => store.sourceDto(s)) })
+    // Pro reads sequences: a simple-mode recipe comes with its sequence form too
+    const asSequence = stored.sequence ?? sequenceFromRecipe(stored.recipe!, { id: stored.recipe!.base.source }, { id: stored.recipe!.overlay.source })
+    return c.json({ ...stored, asSequence, title: row.title, sources: sources.map((s) => store.sourceDto(s)) })
+  })
+
+  // A finished file from Rhapsode Pro becomes a share link. The body is the
+  // raw MP4, streamed to disk (never buffered); ffprobe has the last word.
+  r.post("/publish", gate, async (c) => {
+    if (store.totalBytes() > config.diskCapBytes || store.renderBytes() > config.renderCapBytes)
+      return c.json({ error: "the render budget is full — delete some renders first" }, 507)
+    const title = (c.req.query("title") ?? "").trim().slice(0, 120)
+    const body = c.req.raw.body
+    if (!body) return c.json({ error: "send the file as the request body" }, 400)
+    const tmpDir = path.join(config.dataDir, "tmp")
+    fs.mkdirSync(tmpDir, { recursive: true })
+    const tmp = path.join(tmpDir, `publish-${Date.now()}-${Math.random().toString(36).slice(2)}.mp4`)
+    let total = 0
+    let head: Uint8Array | null = null
+    let refused: { status: 413 | 415; error: string } | null = null
+    try {
+      await pipeline(
+        Readable.fromWeb(body as never),
+        async function* (src: AsyncIterable<Buffer>) {
+          for await (const chunk of src) {
+            total += chunk.length
+            if (total > config.publishMaxBytes) {
+              refused = { status: 413, error: `published files are capped at ${Math.round(config.publishMaxBytes / 1024 ** 3)} GB` }
+              throw new Error("too big")
+            }
+            if (!head) {
+              head = new Uint8Array(chunk.subarray(0, 64))
+              const kind = sniff(head)
+              if (!kind || kind.ext !== "mp4") {
+                refused = { status: 415, error: "publish an MP4 (the YouTube or social presets)" }
+                throw new Error("not mp4")
+              }
+            }
+            yield chunk
+          }
+        },
+        fs.createWriteStream(tmp),
+      )
+    } catch (err) {
+      fs.rmSync(tmp, { force: true })
+      const rej = refused as { status: 413 | 415; error: string } | null
+      if (rej) return c.json({ error: rej.error }, rej.status)
+      return c.json({ error: `upload failed: ${err instanceof Error ? err.message : String(err)}` }, 400)
+    }
+    const slug = store.reserveSlug()
+    try {
+      const probe = await ffprobe(tmp)
+      // what a browser plays inline
+      if (!["h264", "av1", "vp9"].includes(probe.vcodec ?? "")) {
+        fs.rmSync(tmp, { force: true })
+        store.releaseSlug(slug)
+        return c.json({ error: `browsers will not play ${probe.vcodec ?? "that"} inline — export H.264 or AV1` }, 415)
+      }
+      if (!(probe.duration > 0) || probe.duration > config.publishMaxS) {
+        fs.rmSync(tmp, { force: true })
+        store.releaseSlug(slug)
+        return c.json({ error: `published files are capped at ${Math.round(config.publishMaxS / 60)} minutes` }, 422)
+      }
+      const poster = `${tmp}.jpg`
+      await makePoster(tmp, poster, probe.duration)
+      fs.renameSync(tmp, store.renderPath(slug, "mp4"))
+      fs.renameSync(poster, store.renderPath(slug, "jpg"))
+      const row = store.insertRender({
+        slug,
+        title,
+        recipeJson: JSON.stringify({ pro: { title } }),
+        duration: probe.duration,
+        width: probe.width,
+        height: probe.height,
+        bytes: fs.statSync(store.renderPath(slug, "mp4")).size + fs.statSync(store.renderPath(slug, "jpg")).size,
+        jobId: null,
+        sourceIds: [],
+      })
+      store.releaseSlug(slug)
+      const dto = store.renderDto(row)
+      const origin = config.publicOrigin ?? ""
+      return c.json({ render: dto, shareUrl: origin + dto.shareUrl }, 201)
+    } catch (err) {
+      fs.rmSync(tmp, { force: true })
+      store.releaseSlug(slug)
+      return c.json({ error: `could not read the file: ${err instanceof Error ? err.message : String(err)}` }, 422)
+    }
   })
 
   r.delete("/:slug", gate, (c) => {
@@ -91,8 +185,9 @@ export function crossCheck(store: Store, recipe: Recipe, config: Config): string
 }
 
 /** recipe_json holds either a bare v1 recipe (early renders) or {recipe} | {sequence}. */
-export function parseStored(json: string): { recipe?: Recipe; sequence?: Sequence } {
+export function parseStored(json: string): { recipe?: Recipe; sequence?: Sequence; pro?: true } {
   const j = JSON.parse(json) as Record<string, unknown>
+  if (j.pro) return { pro: true }
   if (j.sequence) return { sequence: j.sequence as Sequence }
   if (j.recipe) return { recipe: j.recipe as Recipe }
   return { recipe: j as unknown as Recipe }

@@ -204,6 +204,40 @@ d("app (integration)", () => {
     expect(wall.items[0]?.slug).toBe(slug)
   })
 
+  it("serves originals to Pro and gives every recipe its sequence form", async () => {
+    expect((await app.request(`/api/sources/${base.id}/original`)).status).toBe(401)
+    const orig = await app.request(`/api/sources/${base.id}/original`, { headers: H })
+    expect(orig.status).toBe(200)
+    expect(Buffer.from(await orig.arrayBuffer()).equals(baseMp4)).toBe(true)
+    const rec = await app.request(`/api/renders/${render.slug}/recipe`, { headers: H })
+    expect(rec.status).toBe(200)
+    const body = (await rec.json()) as { recipe?: unknown; asSequence?: { v: number; tracks: Array<{ kind: string }> } }
+    expect(body.recipe).toBeTruthy()
+    expect(body.asSequence?.v).toBe(1)
+    expect(body.asSequence?.tracks.map((t) => t.kind)).toEqual(["visual", "visual", "text"])
+  })
+
+  it("publishes a finished MP4 from Pro as a share link", async () => {
+    const pub = (buf: Uint8Array<ArrayBuffer>, key = KEY) =>
+      app.request("/api/renders/publish?title=from%20pro", { method: "POST", headers: { "x-rhapsode-key": key, "content-type": "video/mp4" }, body: buf })
+    expect((await pub(new Uint8Array(baseMp4), "wrong-key-wrong-key")).status).toBe(401)
+    expect((await pub(new Uint8Array(png))).status).toBe(415)
+    const res = await pub(new Uint8Array(baseMp4))
+    expect(res.status).toBe(201)
+    const { render: r, shareUrl } = (await res.json()) as { render: RenderDto; shareUrl: string }
+    expect(r.origin).toBe("pro")
+    expect(r.title).toBe("from pro")
+    expect(r.width).toBe(320)
+    expect(shareUrl).toBe(`https://r.test/m/${r.slug}`)
+    const page = await app.request(`/m/${r.slug}`)
+    expect(page.status).toBe(200)
+    expect(await page.text()).toContain("from pro")
+    const mp4 = await app.request(`/m/${r.slug}.mp4`)
+    expect(Buffer.from(await mp4.arrayBuffer()).equals(baseMp4)).toBe(true)
+    // a Pro render has no recipe to remix
+    expect((await app.request(`/api/renders/${r.slug}/recipe`, { headers: H })).status).toBe(409)
+  })
+
   it("renders a dub over an image, then remix + delete", async () => {
     const recipe = { v: 1, base: { kind: "image", source: img.id, duration: 1.2 }, overlay: { source: ov.id, in: 0.5, out: 1.5 }, audio: { base: "mute" } }
     const res = await app.request("/api/renders", { method: "POST", headers: { ...H, "content-type": "application/json" }, body: JSON.stringify({ recipe }) })

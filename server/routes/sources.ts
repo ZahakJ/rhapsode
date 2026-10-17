@@ -8,7 +8,8 @@ import { pipeline } from "node:stream/promises"
 import { createSourceUrlSchema, STEM_KINDS, type StemKind, type StemsCreated } from "../../shared/recipe.ts"
 import type { Config } from "../config.ts"
 import type { JobQueue } from "../jobs.ts"
-import { sniff } from "../sniff.ts"
+import { MIME_BY_EXT, sniff } from "../sniff.ts"
+import { serveFile } from "./media.ts"
 import { newId, type SourceRow, type Store } from "../store.ts"
 import { assertPublicHost, parseSourceUrl, UrlRejected } from "../sources/ssrf.ts"
 import { stemTitle, type SeparatePayload } from "../sources/stems.ts"
@@ -155,6 +156,13 @@ export function sourcesRoutes(store: Store, config: Config, queue: JobQueue, dep
   }
 
   r.get("/", (c) => c.json(store.listReadySources(50).map((s) => store.sourceDto(s))))
+
+  // the original file, for Rhapsode Pro opening a render (key-gated: /api/sources/* is)
+  r.get("/:id/original", (c) => {
+    const row = store.sourceById(c.req.param("id"))
+    if (!row || row.status !== "ready") return c.json({ error: "not found" }, 404)
+    return serveFile(c.req.header("range"), store.origPath(row), MIME_BY_EXT[row.ext] ?? "application/octet-stream", "private, no-store")
+  })
 
   r.get("/:id", (c) => {
     const row = store.sourceById(c.req.param("id"))

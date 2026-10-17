@@ -179,6 +179,8 @@ export type SourceDto = {
   media: SourceMedia
   status: SourceStatus
   title: string
+  /** the original's file extension (what GET /api/sources/:id/original returns) */
+  ext: string
   url: string | null
   duration: number | null
   width: number | null
@@ -208,6 +210,8 @@ export type RenderDto = {
   posterUrl: string
   shareUrl: string
   createdAt: number
+  /** "pro": exported from Rhapsode Pro and published as a file (no recipe to remix) */
+  origin: "web" | "pro"
 }
 
 export type RenderPage = { items: RenderDto[]; nextCursor: string | null }
