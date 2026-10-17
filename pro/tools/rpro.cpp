@@ -590,6 +590,8 @@ int cmdBenchExport(int argc, char** argv) {
   if (!pr) return usage();
   job.preset = *pr;
   job.preset.width = job.preset.height = 0;
+  std::string limit = arg(argc, argv, "--limit", "");
+  if (!limit.empty()) job.out = fromSeconds(std::stod(limit));  // the first S seconds (keeps a GPU hold short)
   fs::path out = fs::path(files[0]).parent_path() / ("export-" + pr->id + "." + pr->ext);
   job.path = out.string();
   ExportProgress sum;
