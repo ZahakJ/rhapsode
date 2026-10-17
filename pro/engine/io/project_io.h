@@ -18,6 +18,10 @@ nlohmann::json toJson(const Project& p);
 /** throws std::runtime_error with a readable reason on malformed input */
 Project projectFromJson(const nlohmann::json& j);
 
+/** one clip, for formats that carry Rhapsode settings in their metadata */
+nlohmann::json clipJson(const Clip& c);
+Clip clipFromJson(const nlohmann::json& j);
+
 /** canonical text of a project (stable key order, no whitespace) */
 std::string serialize(const Project& p);
 Project deserialize(const std::string& text);
