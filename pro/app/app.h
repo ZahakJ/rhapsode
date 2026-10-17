@@ -67,7 +67,7 @@ class App {
   void statusBar();
   void pollDialogs();
   void queueExport(const std::string& presetId, const std::string& out, bool marks);
-  void makeProxies();
+  void makeProxies(bool heavyOnly);
   void editClip(const char* label, const std::function<void(Clip&)>& f);
   bool paramRow(const char* label, Param& p, Tick local, float speed, float lo, float hi, const char* fmt);
 
@@ -103,7 +103,9 @@ class App {
   Drag drag_;
   bool editing_ = false;  // an inspector widget is mid-drag (one undo step for the whole drag)
   std::string selectedMedia_;
-  std::set<std::string> binPicked_;  // ctrl-click picks several (multicam)
+  std::set<std::string> binPicked_;
+  std::set<std::string> proxyPending_;
+  bool autoProxies_ = true;  // ctrl-click picks several (multicam)
   std::vector<size_t> pickedWords_;  // transcript selection (word indices)
   size_t wordAnchor_ = 0;
   bool transcriptFocused_ = false;

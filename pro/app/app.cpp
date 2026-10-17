@@ -103,6 +103,7 @@ void App::openPath(const std::string& path) {
   } else {
     s_.importFiles({path});
     if (!s_.project.media.empty()) selectedMedia_ = s_.project.media.back().id;
+    if (autoProxies_) makeProxies(true);
   }
 }
 
@@ -129,6 +130,7 @@ void App::pollDialogs() {
     if (r.tag == "import") {
       s_.importFiles(r.files);
       if (!s_.project.media.empty()) selectedMedia_ = s_.project.media.back().id;
+      if (autoProxies_) makeProxies(true);
     } else if (r.tag == "open") {
       openPath(r.files[0]);
     } else if (r.tag == "save") {
@@ -191,6 +193,7 @@ void App::frame(SDL_GPUCommandBuffer* cmd) {
     for (auto& m : s_.project.media)
       if (m.id == mid) {
         m.proxy = path;
+        proxyPending_.erase(mid);
         ++s_.revision;
       }
   for (auto& f : jobs_.takeApplies()) f();
@@ -341,6 +344,7 @@ void App::menu() {
   if (ImGui::BeginMenu("View")) {
     ImGui::MenuItem("Premiere keymap", nullptr, &premiereKeys_);
     if (ImGui::MenuItem("Use proxies", nullptr, &proxies_)) frames_.setProxies(proxies_);
+    ImGui::MenuItem("Make proxies on import", nullptr, &autoProxies_);
     ImGui::MenuItem("Keyboard shortcuts", "?", &showShortcuts_);
     ImGui::EndMenu();
   }
@@ -820,7 +824,10 @@ void App::bin() {
     SDL_ShowOpenFileDialog(&App::onDialog, this, window_, nullptr, 0, nullptr, true);
   }
   ImGui::SameLine();
-  if (ImGui::Button("Make proxies")) makeProxies();
+  if (ImGui::Button("Make proxies")) makeProxies(false);
+  ImGui::SameLine();
+  ImGui::Checkbox("auto", &autoProxies_);
+  if (ImGui::IsItemHovered()) ImGui::SetTooltip("Make proxies on import for media above HD or in HEVC / AV1");
   ImGui::SameLine();
   ImGui::BeginDisabled(binPicked_.size() < 2);
   if (ImGui::Button("Multicam (sync by sound)")) {
@@ -904,14 +911,18 @@ void App::bin() {
   ImGui::End();
 }
 
-void App::makeProxies() {
+void App::makeProxies(bool heavyOnly) {
   std::string dir = s_.path.empty() ? (fs::temp_directory_path() / "rhapsode-proxies").string()
                                     : (fs::path(s_.path).parent_path() / "Proxies").string();
   std::error_code ec;
   fs::create_directories(dir, ec);
   int n = 0;
   for (auto& m : s_.project.media) {
-    if (m.kind != MediaKind::Video || !m.hasVideo || !m.proxy.empty()) continue;
+    if (m.kind != MediaKind::Video || !m.hasVideo || !m.proxy.empty() || proxyPending_.count(m.id)) continue;
+    // heavy: above HD, or long-GOP HEVC / AV1 (the codecs that make scrubbing wait)
+    bool heavy = m.height > 1080 || m.videoCodec == "hevc" || m.videoCodec == "av1";
+    if (heavyOnly && !heavy) continue;
+    proxyPending_.insert(m.id);
     std::string out = dir + "/" + fs::path(m.path).stem().string() + "-" + m.id + "-proxy.mp4";
     // a half-size, all-intra H.264 proxy: every frame is a keyframe, so scrubbing never decodes a GOP
     int w = std::max(2, (m.width / 2) & ~1);
@@ -927,7 +938,7 @@ void App::makeProxies() {
     jobs_.add(j);
     ++n;
   }
-  s_.status = std::to_string(n) + " proxies queued";
+  if (n || !heavyOnly) s_.status = std::to_string(n) + " proxies queued";
 }
 
 // ——— inspector ———
@@ -950,7 +961,26 @@ bool App::paramRow(const char* label, Param& p, Tick local, float speed, float l
   ImGui::PushStyleColor(ImGuiCol_Text, keyed ? ImVec4(1, 0.48f, 0.35f, 1) : ImVec4(0.6f, 0.6f, 0.65f, 1));
   bool toggled = ImGui::SmallButton(onKey ? "◆" : "◇");
   ImGui::PopStyleColor();
-  if (ImGui::IsItemHovered()) ImGui::SetTooltip("Add or remove a keyframe at the playhead");
+  if (ImGui::IsItemHovered()) ImGui::SetTooltip("Add or remove a keyframe at the playhead; right-click for its easing");
+  if (keyed && ImGui::BeginPopupContextItem("ease")) {
+    // the key at or before the playhead: how the curve leaves it
+    Keyframe* k = nullptr;
+    for (auto& key : p.keys)
+      if (key.t <= local + frameTicks(s_.rate()) / 2) k = &key;
+    if (k) {
+      const char* names[] = {"Linear", "Hold", "Ease in", "Ease out", "Ease in and out", "Bezier"};
+      for (int e = 0; e < 6; ++e)
+        if (ImGui::MenuItem(names[e], nullptr, int(k->ease) == e)) {
+          Ease ease = Ease(e);
+          Tick kt = k->t;
+          editClip("easing", [&](Clip&) {
+            for (auto& key : p.keys)
+              if (key.t == kt) key.ease = ease;
+          });
+        }
+    }
+    ImGui::EndPopup();
+  }
   ImGui::SameLine();
   float v = float(p.at(local));
   ImGui::SetNextItemWidth(-90);
@@ -1039,10 +1069,71 @@ void App::inspector() {
       }
       if (ImGui::IsItemActive()) editing_ = true;
     };
-    trio("Lift", g.lift, 0.002f, -1, 1);
-    trio("Gamma", g.gamma, 0.002f, 0.1f, 4);
-    trio("Gain", g.gain, 0.002f, 0, 4);
-    trio("Offset", g.offset, 0.001f, -1, 1);
+    // the wheels: the puck is colour balance (BT.709 chroma axes), the bar beside it the master
+    auto wheel = [&](const char* name, std::array<double, 3>& v, double neutral, double range) {
+      ImGui::PushID(name);
+      ImGui::BeginGroup();
+      const float R = 46;
+      ImVec2 p0 = ImGui::GetCursorScreenPos();
+      ImVec2 c(p0.x + R, p0.y + R);
+      ImDrawList* dl = ImGui::GetWindowDrawList();
+      for (int i = 0; i < 48; ++i) {
+        float a0 = float(i) / 48 * 6.2832f, a1 = float(i + 1) / 48 * 6.2832f;
+        // hue around the ring, matching where the puck pushes the colour
+        double u = std::cos(a0), w = -std::sin(a0);
+        double r = 0.5 + 0.5 * 1.5748 * w, gg = 0.5 + 0.5 * (-0.1873 * u - 0.4681 * w), b = 0.5 + 0.5 * 1.8556 * u;
+        ImU32 col = IM_COL32(int(std::clamp(r, 0.0, 1.0) * 255), int(std::clamp(gg, 0.0, 1.0) * 255), int(std::clamp(b, 0.0, 1.0) * 255), 255);
+        dl->PathArcTo(c, R - 3, a0, a1, 2);
+        dl->PathStroke(col, 0, 5);
+      }
+      dl->AddCircleFilled(c, R - 7, IM_COL32(26, 26, 31, 255));
+      double d[3] = {v[0] - neutral, v[1] - neutral, v[2] - neutral};
+      double m = (d[0] + d[1] + d[2]) / 3;
+      double cr = (d[0] - m) / range, cb = (d[2] - m) / range;
+      float pu = float(cb / 1.8556), pv = float(cr / 1.5748);
+      ImVec2 puck(c.x + pu * (R - 8), c.y - pv * (R - 8));
+      dl->AddCircle(puck, 5, kAccent, 0, 2);
+      ImGui::InvisibleButton("w", ImVec2(R * 2, R * 2));
+      bool changed = false;
+      if (ImGui::IsItemActive()) {
+        ImVec2 mpos = ImGui::GetIO().MousePos;
+        double u = (mpos.x - c.x) / (R - 8), w = -(mpos.y - c.y) / (R - 8);
+        double len = std::sqrt(u * u + w * w);
+        if (len > 1) u /= len, w /= len;
+        double ccr = 1.5748 * w, ccb = 1.8556 * u, ccg = -0.1873 * u - 0.4681 * w;
+        v = {neutral + m + range * ccr, neutral + m + range * ccg, neutral + m + range * ccb};
+        changed = true;
+        editing_ = true;
+      }
+      if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+        v = {neutral, neutral, neutral};
+        changed = true;
+      }
+      ImGui::SameLine();
+      float mf = float(m);
+      if (ImGui::VSliderFloat("##m", ImVec2(14, R * 2), &mf, float(-range * 2), float(range * 2), "")) {
+        for (int k = 0; k < 3; ++k) v[size_t(k)] += mf - m;
+        changed = true;
+        editing_ = true;
+      }
+      ImGui::TextUnformatted(name);
+      ImGui::EndGroup();
+      ImGui::PopID();
+      if (changed) ch = true;
+    };
+    wheel("Lift", g.lift, 0, 0.25);
+    ImGui::SameLine(0, 12);
+    wheel("Gamma", g.gamma, 1, 0.5);
+    ImGui::SameLine(0, 12);
+    wheel("Gain", g.gain, 1, 0.5);
+    wheel("Offset", g.offset, 0, 0.25);
+    if (ImGui::TreeNode("Numbers")) {
+      trio("Lift", g.lift, 0.002f, -1, 1);
+      trio("Gamma", g.gamma, 0.002f, 0.1f, 4);
+      trio("Gain", g.gain, 0.002f, 0, 4);
+      trio("Offset", g.offset, 0.001f, -1, 1);
+      ImGui::TreePop();
+    }
     auto one = [&](const char* name, double& v, float sp, float lo, float hi) {
       float f = float(v);
       if (ImGui::DragFloat(name, &f, sp, lo, hi, "%.3f")) v = f, ch = true;
@@ -1276,6 +1367,45 @@ void App::mixerPanel() {
     if (ImGui::SmallButton(t.mute ? "M●" : "M")) t.mute = !t.mute, ++s_.revision;
     ImGui::SameLine();
     if (ImGui::SmallButton(t.solo ? "S●" : "S")) t.solo = !t.solo, ++s_.revision;
+    if (ImGui::SmallButton(t.fx.empty() ? "FX" : "FX●")) ImGui::OpenPopup("trackfx");
+    if (ImGui::BeginPopup("trackfx")) {
+      // each effect is on while it is in the list; its knobs are plain numbers
+      auto fx = [&](const char* type, std::initializer_list<std::tuple<const char*, float, float, float>> params) {
+        auto it = std::find_if(t.fx.begin(), t.fx.end(), [&](const Effect& e) { return e.type == type; });
+        bool on = it != t.fx.end();
+        if (ImGui::Checkbox(type, &on)) {
+          s_.history.push(s_.project, std::string("track ") + type);
+          if (on) {
+            Effect e{type, true, {}};
+            for (auto& [n, lo, hi, def] : params) e.params[n] = Param(def);
+            t.fx.push_back(e);
+          } else {
+            t.fx.erase(it);
+          }
+          ++s_.revision;
+          return;
+        }
+        if (!on) return;
+        ImGui::Indent();
+        for (auto& [n, lo, hi, dflt] : params) {
+          (void)dflt;
+          float v = float(it->params[n].value);
+          if (ImGui::SliderFloat(n, &v, lo, hi)) {
+            if (!editing_) s_.history.push(s_.project, std::string("track ") + type);
+            editing_ = true;
+            it->params[n].value = v;
+            ++s_.revision;
+          }
+          if (ImGui::IsItemDeactivated()) editing_ = false;
+        }
+        ImGui::Unindent();
+      };
+      fx("eq", {{"highpass", 0.f, 300.f, 80.f}, {"low", -18.f, 18.f, 0.f}, {"mid", -18.f, 18.f, 0.f}, {"midFreq", 200.f, 8000.f, 1000.f}, {"high", -18.f, 18.f, 0.f}});
+      fx("gate", {{"threshold", -80.f, -10.f, -50.f}, {"range", -80.f, 0.f, -40.f}});
+      fx("compressor", {{"threshold", -60.f, 0.f, -18.f}, {"ratio", 1.f, 20.f, 3.f}, {"attack", 0.5f, 100.f, 10.f}, {"release", 10.f, 1000.f, 120.f}, {"makeup", 0.f, 24.f, 0.f}});
+      fx("limiter", {{"ceiling", -12.f, 0.f, -1.f}});
+      ImGui::EndPopup();
+    }
     ImGui::EndGroup();
     ImGui::SameLine(0, 18);
     ImGui::PopID();
