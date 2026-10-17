@@ -7,6 +7,7 @@
 #include <imgui.h>
 
 #include <memory>
+#include <set>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -102,6 +103,7 @@ class App {
   Drag drag_;
   bool editing_ = false;  // an inspector widget is mid-drag (one undo step for the whole drag)
   std::string selectedMedia_;
+  std::set<std::string> binPicked_;  // ctrl-click picks several (multicam)
   std::vector<size_t> pickedWords_;  // transcript selection (word indices)
   size_t wordAnchor_ = 0;
   bool transcriptFocused_ = false;
