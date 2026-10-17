@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <chrono>
 #include <filesystem>
 #include <random>
@@ -162,7 +163,7 @@ TEST_CASE("kill -9 in the middle of editing never leaves an unreadable autosave"
   std::string dir = fx::tmpdir("crash");
   std::string path = dir + "/cut.rpro";
   std::mt19937 rng(99);
-  int trials = 25, recovered = 0;
+  int trials = std::getenv("RHAP_CRASH_TRIALS") ? std::atoi(std::getenv("RHAP_CRASH_TRIALS")) : 25, recovered = 0;
   int64_t worstLag = 0;
   for (int t = 0; t < trials; ++t) {
     std::filesystem::remove(autosavePath(path));  // each trial starts with no autosave
@@ -176,7 +177,7 @@ TEST_CASE("kill -9 in the middle of editing never leaves an unreadable autosave"
       _exit(127);
     }
     close(fds[1]);
-    std::this_thread::sleep_for(std::chrono::milliseconds(60 + rng() % 400));
+    std::this_thread::sleep_for(std::chrono::milliseconds(30 + rng() % 300));
     kill(pid, SIGKILL);
     waitpid(pid, nullptr, 0);
     int64_t n = 0, v;
@@ -200,5 +201,6 @@ TEST_CASE("kill -9 in the middle of editing never leaves an unreadable autosave"
     }
   }
   CHECK(recovered == trials);
-  MESSAGE("worst case: the autosave was " << worstLag << " edits behind the moment of the kill");
+  MESSAGE(recovered << "/" << trials << " kills left a readable autosave; worst case it was " << worstLag
+                     << " edits (20 ms of editing) behind the moment of the kill");
 }

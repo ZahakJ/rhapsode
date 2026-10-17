@@ -186,16 +186,12 @@ void App::frame(SDL_GPUCommandBuffer* cmd) {
       }
   for (auto& f : jobs_.takeApplies()) f();
   player_.tick();
-  // autosave two seconds after the last change
-  static auto lastChange = SDL_GetTicks();
-  static uint64_t seenRev = 0;
-  if (s_.revision != seenRev) {
-    seenRev = s_.revision;
-    lastChange = SDL_GetTicks();
-  }
-  if (s_.dirty() && SDL_GetTicks() - lastChange > 2000 && lastAutosave_ != s_.revision) {
+  // autosave at most two seconds after any change, even while editing never pauses
+  static Uint64 lastSave = SDL_GetTicks();
+  if (s_.dirty() && lastAutosave_ != s_.revision && SDL_GetTicks() - lastSave >= 2000) {
     s_.autosave();
     lastAutosave_ = s_.revision;
+    lastSave = SDL_GetTicks();
   }
 
   ImGui::DockSpaceOverViewport(kDockId, ImGui::GetMainViewport());
