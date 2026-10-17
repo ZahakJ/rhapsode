@@ -66,4 +66,7 @@ int addCaptions(Project& p, const std::string& seqId, const std::string& clipId,
 int deleteWords(Project& p, const std::string& seqId, const std::string& clipId, const std::vector<size_t>& words,
                 Tick keep = kFlicks / 20, std::string* err = nullptr);
 
+/** words that are hesitation, not content ("um", "uh", "erm", "hmm", …), by transcript index, for a clip */
+std::vector<size_t> fillerWords(const Project& p, const Sequence& s, const Clip& c);
+
 }  // namespace rhap::ai

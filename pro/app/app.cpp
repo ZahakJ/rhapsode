@@ -1549,6 +1549,15 @@ void App::transcriptPanel() {
     pickedWords_.clear();
   }
   ImGui::SameLine();
+  if (ImGui::Button("Remove filler words")) {
+    auto f = ai::fillerWords(s_.project, *s, *c);
+    std::string id = c->id, seq = s->id, err;
+    s_.apply("remove filler words", [&](Editor&) {
+      int n = f.empty() ? 0 : ai::deleteWords(s_.project, seq, id, f, kFlicks / 20, &err);
+      return n > 0 ? Err{} : Err{err.empty() ? "no filler words" : err};
+    });
+  }
+  ImGui::SameLine();
   if (ImGui::Button("Export SRT…")) {
     std::vector<Word> placed;
     for (auto& w : words) placed.push_back(Word{w.a, w.b, w.text, 1});
