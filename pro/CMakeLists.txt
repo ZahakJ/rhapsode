@@ -13,6 +13,7 @@ option(RHAP_TESTS "Build tests" ON)
 option(RHAP_APP "Build the editor (needs SDL3)" ON)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+include(Shaders)
 find_package(PkgConfig REQUIRED)
 find_package(nlohmann_json 3 REQUIRED)
 find_package(pugixml REQUIRED)

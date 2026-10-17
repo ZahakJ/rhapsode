@@ -2,7 +2,14 @@ add_library(rhap STATIC
   ticks.cpp
   model/model.cpp model/edit.cpp
   io/project_io.cpp
-  media/decode.cpp)
+  media/decode.cpp
+  gfx/color.cpp gfx/gpu.cpp gfx/text.cpp
+  render/evaluate.cpp render/renderer.cpp)
 target_include_directories(rhap PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/..)
-target_link_libraries(rhap PUBLIC nlohmann_json::nlohmann_json pugixml::pugixml PkgConfig::FFMPEG Threads::Threads)
+pkg_check_modules(FT REQUIRED IMPORTED_TARGET freetype2 harfbuzz)
+target_link_libraries(rhap PUBLIC nlohmann_json::nlohmann_json pugixml::pugixml PkgConfig::FFMPEG PkgConfig::FT
+                      SDL3::SDL3 Threads::Threads)
+target_compile_definitions(rhap PUBLIC RHAP_FONT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../server/render/fonts")
 target_compile_options(rhap PRIVATE -Wall -Wextra -Wno-missing-field-initializers)
+rhap_shaders(rhap NAME rhap_shaders SOURCES
+  gfx/shaders/quad.vert gfx/shaders/layer.frag gfx/shaders/output.frag gfx/shaders/blur.frag)
