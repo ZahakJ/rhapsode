@@ -18,8 +18,9 @@ this machine, the speech and picture models included; nothing needs an account o
   the background; stills, sound files, rotation and non-square pixels.
 - **Colour.** Every layer decoded to linear light in the working gamut on the GPU (the stream's own matrix,
   range and transfer); a primary grade with lift, gamma, gain, offset, exposure, contrast, saturation, white
-  balance, curves and `.cube` LUTs; Rec.709, Rec.2020 or ACEScct working space; Rec.709, sRGB, PQ and HLG
-  output with HDR material read at its brightness; waveform, RGB parade, vectorscope and histogram.
+  balance, curves and `.cube` LUTs, on colour wheels; Rec.709, Rec.2020 or ACEScct working space; Rec.709,
+  sRGB, PQ and HLG output with HDR material read at its brightness; OpenColorIO with the ACES 2.0 configs
+  (any display/view, camera logs as inputs); waveform, RGB parade, vectorscope and histogram.
 - **Sound.** A sample-exact mixer with keyframed gain and balance, fades, equal-power crossfades and per
   track EQ, compressor, limiter and gate; a BS.1770-4 meter (momentary, short-term, integrated, range,
   true peak); normalise to a target; duck music under speech; noise reduction and voice isolation rendered
@@ -58,7 +59,9 @@ curl -L -o ~/.cache/rhapsode-pro/models/ggml-base.bin \
   https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin
 ```
 
-`-DRHAP_WHISPER_CUDA=ON` builds it for the GPU. Voice isolation uses Demucs
+`-DRHAP_WHISPER_CUDA=ON` builds it for the GPU. OpenColorIO is optional the same way: build 2.5 into
+`pro/build/ocio` (`-DBUILD_SHARED_LIBS=OFF -DOCIO_INSTALL_EXT_PACKAGES=MISSING`; on GCC 16 its bundled
+yaml-cpp needs `#include <cstdint>` in `emitterutils.cpp`) and CMake picks it up. Voice isolation uses Demucs
 (`uv tool install demucs --with torch --with torchaudio --with soundfile`), background removal uses
 rembg (`uv tool install "rembg[cpu,cli]"`); without them those two menu items say what is missing.
 

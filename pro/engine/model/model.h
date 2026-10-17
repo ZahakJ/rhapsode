@@ -76,6 +76,7 @@ struct Media {
   std::string videoCodec, audioCodec;
   ColorInfo color;
   Tick startTimecode = 0;  // source timecode of the first frame, for EDL and multicam sync
+  std::string colorspace;  // an OCIO input colourspace (camera log etc.); empty = read the stream's tags
   bool operator==(const Media&) const = default;
 };
 
@@ -226,6 +227,14 @@ struct Transcript {
   bool operator==(const Transcript&) const = default;
 };
 
+/** OCIO colour management: when `config` is set, the output goes through its display/view (e.g. ACES 2.0 SDR) */
+struct ColorManagement {
+  std::string config;   // "ocio://studio-config-latest" or a .ocio path; empty = Rhapsode's own transforms
+  std::string display;  // e.g. "Rec.1886 Rec.709 - Display"
+  std::string view;     // e.g. "ACES 2.0 - SDR 100 nits (Rec.709)"
+  bool operator==(const ColorManagement&) const = default;
+};
+
 enum class WorkingSpace { Rec709, ACEScct, Rec2020 };
 enum class OutputSpace { Rec709, sRGB, Rec2020PQ, Rec2020HLG };
 
@@ -254,6 +263,7 @@ struct Project {
   OutputSpace output = OutputSpace::Rec709;
   int nextId = 1;
   std::vector<Transcript> transcripts;
+  ColorManagement ocio;
   bool operator==(const Project&) const = default;
 
   const Transcript* transcriptOf(const std::string& mediaId) const {

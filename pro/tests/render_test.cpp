@@ -392,3 +392,52 @@ TEST_CASE("gpu: phone footage tagged as rotated shows upright, as ffmpeg shows i
   }
   stbi_image_free(r);
 }
+
+#include "gfx/ocio.h"
+
+TEST_CASE("gpu: OCIO (ACES 2.0) output and camera-log input match OCIO's own processor") {
+  gfx::Gpu* g = gpu();
+  if (!g || !ocio::available()) return;
+  const std::string cfg = ocio::defaultConfig(), display = "Rec.1886 Rec.709 - Display", view = "ACES 2.0 - SDR 100 nits (Rec.709)";
+  auto setup = [&](Project& p) {
+    p.working = WorkingSpace::ACEScct;
+    p.ocio = {cfg, display, view};
+  };
+  // output: a fill through the ACES 2.0 SDR view
+  for (auto rgb : {std::array<double, 3>{0.1, 0.1, 0.1}, {0.5, 0.5, 0.5}, {0.9, 0.9, 0.9}, {0.9, 0.2, 0.1}, {0.1, 0.6, 0.9}}) {
+    Project p = seqProject(16, 16);
+    setup(p);
+    Editor ed(p, "main");
+    REQUIRE(ed.overwrite({TrackKind::Video, 0}, solid(p, rgb[0], rgb[1], rgb[2])).empty());
+    NoFrames nf;
+    Image img = renderRgba(*g, nf, p, sec(1));
+    color::Vec3 lin{color::toLinear(color::Transfer::sRGB, rgb[0]), color::toLinear(color::Transfer::sRGB, rgb[1]),
+                    color::toLinear(color::Transfer::sRGB, rgb[2])};
+    color::Vec3 ap1 = color::mul(color::gamut(color::Primaries::BT709, color::Primaries::AP1), lin);
+    float want[3] = {float(ap1[0]), float(ap1[1]), float(ap1[2])};
+    REQUIRE(ocio::applyOutput(cfg, display, view, want).empty());
+    for (int k = 0; k < 3; ++k)
+      CHECK_MESSAGE(std::abs(img.at(8, 8)[k] - to8(want[k])) <= 2, "fill " << rgb[0] << "," << rgb[1] << "," << rgb[2] << " ch " << k
+                                                                         << ": " << int(img.at(8, 8)[k]) << " vs OCIO " << to8(want[k]));
+  }
+  // input: an S-Log3 S-Gamut3.Cine picture read through OCIO, then out through the same view
+  std::string png = fx::mediaDir() + "/slog3.png";
+  if (!std::filesystem::exists(png))
+    std::system(("ffmpeg -nostdin -loglevel error -y -f lavfi -i color=c=0x5a7a9a:s=64x36 -frames:v 1 -pix_fmt rgb24 '" + png + "'").c_str());
+  Project p = seqProject(64, 36);
+  setup(p);
+  Media m;
+  m.id = "slog";
+  REQUIRE(probe(png, m).empty());
+  m.colorspace = "S-Log3 S-Gamut3.Cine";
+  p.media.push_back(m);
+  Editor ed(p, "main");
+  REQUIRE(ed.overwrite({TrackKind::Video, 0}, clipOf(p, m, 0, sec(2))).empty());
+  DecoderPool pool(false);
+  Image img = renderRgba(*g, pool, p, sec(0.5));
+  float want[3] = {0x5a / 255.f, 0x7a / 255.f, 0x9a / 255.f};
+  REQUIRE(ocio::applyInput(cfg, m.colorspace, want).empty());
+  REQUIRE(ocio::applyOutput(cfg, display, view, want).empty());
+  for (int k = 0; k < 3; ++k)
+    CHECK_MESSAGE(std::abs(img.at(32, 18)[k] - to8(want[k])) <= 3, "S-Log3 ch " << k << ": " << int(img.at(32, 18)[k]) << " vs OCIO " << to8(want[k]));
+}

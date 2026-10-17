@@ -6,17 +6,24 @@
 layout(location = 0) in vec2 v_uv;
 layout(location = 0) out vec4 o_color;
 layout(set = 2, binding = 0) uniform sampler2D s_src;  // premultiplied linear, working gamut
+layout(set = 2, binding = 1) uniform sampler3D s_outLut;  // OCIO display/view: ACEScct -> display encoding
 
 layout(set = 3, binding = 0) uniform Output {
   vec4 u_gamR, u_gamG, u_gamB;  // working linear → output linear
   vec4 u_yuvY, u_yuvU, u_yuvV;  // R'G'B' → code/2^bits
   vec4 u_bg;    // background (output linear), w = 1 to flatten alpha
   vec4 u_p0;    // x transfer, y mode (0 rgb, 1 Y, 2 CbCr), z store scale, w highlight roll-off on
+  vec4 u_outLut;  // x on (the gamut rows then map to AP1), y size
 };
 
 vec3 encode(vec4 c) {
   vec3 lin = vec3(dot(u_gamR.xyz, c.rgb), dot(u_gamG.xyz, c.rgb), dot(u_gamB.xyz, c.rgb));
   if (u_bg.w > 0.5) lin += u_bg.rgb * (1.0 - c.a);
+  if (u_outLut.x > 0.5) {
+    float n = u_outLut.y;
+    vec3 e = clamp(fromLinear(7, lin), 0.0, 1.0);
+    return clamp(texture(s_outLut, (e * (n - 1.0) + 0.5) / n).rgb, 0.0, 1.0);
+  }
   if (u_p0.w > 0.5) {
     // soft shoulder above 0.8 for HDR material on an SDR output
     vec3 over = max(lin - 0.8, 0.0);

@@ -274,10 +274,10 @@ SDL_GPUGraphicsPipeline* Gpu::makePipeline(const char* frag, int samplers, Blend
 }
 
 SDL_GPUGraphicsPipeline* Gpu::layerPipeline(BlendMode b, SDL_GPUTextureFormat target) {
-  return makePipeline("layer.frag", 5, b, target);
+  return makePipeline("layer.frag", 6, b, target);
 }
 SDL_GPUGraphicsPipeline* Gpu::outputPipeline(SDL_GPUTextureFormat target) {
-  return makePipeline("output.frag", 1, BlendMode::None, target);
+  return makePipeline("output.frag", 2, BlendMode::None, target);
 }
 SDL_GPUGraphicsPipeline* Gpu::blurPipeline(SDL_GPUTextureFormat target) {
   return makePipeline("blur.frag", 1, BlendMode::None, target);

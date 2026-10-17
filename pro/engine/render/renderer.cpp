@@ -9,6 +9,7 @@ extern "C" {
 #include <cstring>
 #include <sstream>
 
+#include "../gfx/ocio.h"
 #include "../gfx/text.h"
 
 namespace rhap {
@@ -63,12 +64,14 @@ struct LayerU {
   float lift[4], gammaInv[4], gain[4], offset[4];
   float p2[4], wb[4], lutDom[4], lutInv[4];
   float fill[4], shape[4];
+  float inLut[4];
 };
 
 struct OutputU {
   float gamR[4], gamG[4], gamB[4];
   float yuvY[4], yuvU[4], yuvV[4];
   float bg[4], p0[4];
+  float outLut[4];
 };
 
 struct BlurU {
@@ -141,6 +144,7 @@ struct Renderer::Prep {
   const Texture* planes[3] = {nullptr, nullptr, nullptr};
   const Texture* curves = nullptr;
   const Texture* lut = nullptr;
+  const Texture* inLut = nullptr;
   bool blur = false;
   double blurSigma = 0;
 };
@@ -150,7 +154,7 @@ Renderer::Renderer(gfx::Gpu& gpu, FrameSource& frames) : gpu_(gpu), frames_(fram
 Renderer::~Renderer() {
   for (auto& [k, s] : slots_)
     for (auto& t : s->planes) gpu_.release(t);
-  for (auto* m : {&titles_, &curves_, &luts_})
+  for (auto* m : {&titles_, &curves_, &luts_, &ocioLuts_})
     for (auto& [k, t] : *m) gpu_.release(t);
   for (auto& [k, t] : scratch_) gpu_.release(t);
 }
@@ -329,6 +333,16 @@ bool Renderer::prepareMedia(const Project& p, const LayerDraw& l, const Sequence
   color::Transfer tr = m.kind == MediaKind::Image ? color::Transfer::sRGB : color::transferOf(f->color.transfer);
   u.p0[1] = float(int(tr));
   auto gam = color::gamut(color::primariesOf(m.color.primaries), color::workingPrimaries(p.working));
+  if (!m.colorspace.empty()) {
+    // a tagged camera encoding: OCIO decodes it to ACEScct; the shader takes it to linear AP1
+    std::string cfg = p.ocio.config.empty() ? ocio::defaultConfig() : p.ocio.config;
+    if (const Texture* in = ocioLut(nullptr, "in|" + cfg + "|" + m.colorspace, false, cfg, m.colorspace, "")) {
+      pr.inLut = in;
+      u.inLut[0] = 1;
+      u.inLut[1] = float(in->w);
+      gam = color::gamut(color::Primaries::AP1, color::workingPrimaries(p.working));
+    }
+  }
   row3(u.gamR, gam, 0);
   row3(u.gamG, gam, 1);
   row3(u.gamB, gam, 2);
@@ -347,16 +361,17 @@ void Renderer::drawQuad(SDL_GPURenderPass* pass, SDL_GPUCommandBuffer* cmd, cons
   SDL_BindGPUGraphicsPipeline(pass, pipe);
   SDL_PushGPUVertexUniformData(cmd, 0, &pr.q, sizeof pr.q);
   SDL_PushGPUFragmentUniformData(cmd, 0, &pr.u, sizeof pr.u);
-  SDL_GPUTextureSamplerBinding b[5];
+  SDL_GPUTextureSamplerBinding b[6];
   for (int i = 0; i < 3; ++i) b[i] = {pr.planes[i] ? pr.planes[i]->tex : gpu_.dummy2D().tex, gpu_.linear()};
   b[3] = {pr.curves ? pr.curves->tex : gpu_.dummy2D().tex, gpu_.linear()};
   b[4] = {pr.lut ? pr.lut->tex : gpu_.dummy3D().tex, gpu_.linear()};
-  SDL_BindGPUFragmentSamplers(pass, 0, b, 5);
+  b[5] = {pr.inLut ? pr.inLut->tex : gpu_.dummy3D().tex, gpu_.linear()};
+  SDL_BindGPUFragmentSamplers(pass, 0, b, 6);
   SDL_DrawGPUPrimitives(pass, 4, 1, 0, 0);
 }
 
 void Renderer::pass(SDL_GPUCommandBuffer* cmd, const Texture& src, Texture& dst, const void* uniforms, size_t size,
-                    SDL_GPUGraphicsPipeline* pipe) {
+                    SDL_GPUGraphicsPipeline* pipe, const Texture* second) {
   if (!pipe) return;
   SDL_GPUColorTargetInfo ct{};
   ct.texture = dst.tex;
@@ -367,8 +382,8 @@ void Renderer::pass(SDL_GPUCommandBuffer* cmd, const Texture& src, Texture& dst,
   QuadU q = fullQuad();
   SDL_PushGPUVertexUniformData(cmd, 0, &q, sizeof q);
   SDL_PushGPUFragmentUniformData(cmd, 0, uniforms, uint32_t(size));
-  SDL_GPUTextureSamplerBinding b{src.tex, gpu_.linear()};
-  SDL_BindGPUFragmentSamplers(rp, 0, &b, 1);
+  SDL_GPUTextureSamplerBinding b[2] = {{src.tex, gpu_.linear()}, {second ? second->tex : gpu_.dummy3D().tex, gpu_.linear()}};
+  SDL_BindGPUFragmentSamplers(rp, 0, b, second ? 2 : 1);
   SDL_DrawGPUPrimitives(rp, 4, 1, 0, 0);
   SDL_EndGPURenderPass(rp);
 }
@@ -377,6 +392,9 @@ std::string Renderer::render(SDL_GPUCommandBuffer* cmd, const Project& p, const 
   stats_ = {};
   gpu_.ensure(target, s.width, s.height, kWork, kTargetUsage);
   if (!target) return "cannot allocate the frame";
+  // the output transform's LUT rides in this frame's upload pass, ahead of every draw
+  if (!p.ocio.config.empty())
+    ocioLut(nullptr, "out|" + p.ocio.config + "|" + p.ocio.display + "|" + p.ocio.view, true, p.ocio.config, p.ocio.display, p.ocio.view);
   return renderInto(cmd, p, s, t, target, 0, -1);
 }
 
@@ -531,6 +549,30 @@ std::string Renderer::renderInto(SDL_GPUCommandBuffer* cmd, const Project& p, co
   return {};
 }
 
+const Texture* Renderer::ocioLut(SDL_GPUCommandBuffer* cmd, const std::string& key, bool output, const std::string& config,
+                                 const std::string& a, const std::string& b) {
+  auto it = ocioLuts_.find(key);
+  if (it != ocioLuts_.end()) return it->second ? &it->second : nullptr;
+  Texture& t = ocioLuts_[key];
+  color::Lut3D l;
+  const int n = 65;
+  std::string e = output ? ocio::bakeOutput(config, a, b, n, l) : ocio::bakeInput(config, a, n, l);
+  if (!e.empty()) return nullptr;  // stays an empty entry: asked once, not every frame
+  t = gpu_.make(n, n, SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT, SDL_GPU_TEXTUREUSAGE_SAMPLER, n);
+  std::vector<float> px(size_t(n) * n * n * 4);
+  for (size_t i = 0; i < size_t(n) * n * n; ++i) {
+    px[i * 4] = l.rgb[i * 3];
+    px[i * 4 + 1] = l.rgb[i * 3 + 1];
+    px[i * 4 + 2] = l.rgb[i * 3 + 2];
+    px[i * 4 + 3] = 1;
+  }
+  // always through the frame's one upload pass: a copy pass between this frame's draws reordered them
+  (void)cmd;
+  auto bytes = std::make_shared<std::vector<float>>(std::move(px));
+  uploads_.push_back({&t, reinterpret_cast<const uint8_t*>(bytes->data()), n * 16, n * 16, n, n, bytes});
+  return &t;
+}
+
 void Renderer::output(SDL_GPUCommandBuffer* cmd, const Texture& src, Texture& dst, const Project& p,
                       std::array<double, 3> bg, bool flatten) {
   OutputU u{};
@@ -546,7 +588,19 @@ void Renderer::output(SDL_GPUCommandBuffer* cmd, const Texture& src, Texture& ds
   u.bg[3] = flatten ? 1.f : 0.f;
   u.p0[0] = float(int(color::outputTransfer(p.output)));
   u.p0[1] = 0;
-  pass(cmd, src, dst, &u, sizeof u, gpu_.outputPipeline(dst.fmt));
+  const Texture* lut = nullptr;
+  if (!p.ocio.config.empty())
+    lut = ocioLut(nullptr, "out|" + p.ocio.config + "|" + p.ocio.display + "|" + p.ocio.view, true, p.ocio.config, p.ocio.display, p.ocio.view);
+  if (lut) {
+    // OCIO takes over from the working gamut: hand it linear AP1
+    auto ap1 = color::gamut(color::workingPrimaries(p.working), color::Primaries::AP1);
+    row3(u.gamR, ap1, 0);
+    row3(u.gamG, ap1, 1);
+    row3(u.gamB, ap1, 2);
+    u.outLut[0] = 1;
+    u.outLut[1] = float(lut->w);
+  }
+  pass(cmd, src, dst, &u, sizeof u, gpu_.outputPipeline(dst.fmt), lut ? lut : &gpu_.dummy3D());
 }
 
 void Renderer::outputYuv(SDL_GPUCommandBuffer* cmd, const Texture& src, Texture& y, Texture& uv, const Project& p,
@@ -569,10 +623,22 @@ void Renderer::outputYuv(SDL_GPUCommandBuffer* cmd, const Texture& src, Texture&
   row4(u.yuvV, m, 2);
   int texBits = gfx::texelBytes(y.fmt) == 1 ? 8 : 16;
   u.p0[2] = float(std::exp2(f.bits + f.shift) / (std::exp2(texBits) - 1));
+  const Texture* lut = nullptr;
+  if (!p.ocio.config.empty())
+    lut = ocioLut(nullptr, "out|" + p.ocio.config + "|" + p.ocio.display + "|" + p.ocio.view, true, p.ocio.config, p.ocio.display, p.ocio.view);
+  if (lut) {
+    auto ap1 = color::gamut(color::workingPrimaries(p.working), color::Primaries::AP1);
+    row3(u.gamR, ap1, 0);
+    row3(u.gamG, ap1, 1);
+    row3(u.gamB, ap1, 2);
+    u.outLut[0] = 1;
+    u.outLut[1] = float(lut->w);
+  }
+  const Texture* second = lut ? lut : &gpu_.dummy3D();
   u.p0[1] = 1;
-  pass(cmd, src, y, &u, sizeof u, gpu_.outputPipeline(y.fmt));
+  pass(cmd, src, y, &u, sizeof u, gpu_.outputPipeline(y.fmt), second);
   u.p0[1] = 2;
-  pass(cmd, src, uv, &u, sizeof u, gpu_.outputPipeline(uv.fmt));
+  pass(cmd, src, uv, &u, sizeof u, gpu_.outputPipeline(uv.fmt), second);
 }
 
 }  // namespace rhap
