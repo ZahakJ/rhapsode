@@ -34,7 +34,9 @@ LockPersonality=yes
 RestrictRealtime=yes
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
 CapabilityBoundingSet=
-SystemCallFilter=@system-service
+# @pkey: deno (yt-dlp's JS challenge solver) calls pkey_alloc at startup and is
+# killed with SIGSYS without it, which leaves YouTube serving only low formats
+SystemCallFilter=@system-service @pkey
 DevicePolicy=auto
 DeviceAllow=/dev/nvidiactl rw
 DeviceAllow=/dev/nvidia-uvm rw
