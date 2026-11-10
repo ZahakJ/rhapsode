@@ -98,10 +98,13 @@ export function isRealEdit(e: Edit | null | undefined): boolean {
   return !!c && (c.x > 0.0005 || c.y > 0.0005 || c.w < 0.9995 || c.h < 0.9995)
 }
 
-/** sensible first cut for a freshly picked source: up to 15 s from the start */
-function defaultCut(s: SourceDto): { in: number; out: number } {
+/** sensible first cut for a freshly picked source: up to 15 s from the start, or from
+ *  the moment asked for when only a window of a long video was fetched */
+export function defaultCut(s: SourceDto): { in: number; out: number } {
   const d = s.duration ?? 0
-  return { in: 0, out: round1(Math.min(d, 15)) || d }
+  const at = s.around !== null && s.windowStart !== null ? round1(Math.min(Math.max(0, s.around - s.windowStart), d)) : 0
+  const start = d - at < 1 ? 0 : at
+  return { in: start, out: round1(Math.min(d, start + 15)) || d }
 }
 
 export const useCompose = create<ComposeState>()((set, get) => ({

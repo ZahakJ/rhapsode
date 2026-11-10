@@ -189,6 +189,8 @@ export type SourceDto = {
   hasAudio: boolean
   windowStart: number | null
   windowEnd: number | null
+  /** windowed fetches: the moment asked for, in seconds of the original (windowStart ≤ around ≤ windowEnd) */
+  around: number | null
   error: string | null
   jobId: string | null
   proxyUrl: string | null

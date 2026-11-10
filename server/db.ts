@@ -166,6 +166,8 @@ export const MIGRATIONS: string[] = [
     CREATE INDEX jobs_status ON jobs(status, created_at);
     PRAGMA foreign_keys = ON;
   `,
+  // v4: the moment the user asked for inside a windowed fetch (absolute seconds in the original)
+  `ALTER TABLE sources ADD COLUMN around REAL;`,
 ]
 
 function migrate(db: DatabaseSync): void {

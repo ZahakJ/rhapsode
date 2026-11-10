@@ -99,6 +99,7 @@ sources (
   status TEXT CHECK (status IN ('pending','ready','failed')),
   url, title, ext, duration, width, height, fps, has_audio,
   window_start, window_end,                  -- set when only part of a long video was fetched
+  around,                                    -- the moment asked for, in seconds of the original
   sha256, bytes, error, job_id, created_at, last_used_at
 )
 renders (
@@ -121,6 +122,8 @@ the sweep.
 Migrations are an append-only array in `server/db.ts`; rung *i* takes
 `PRAGMA user_version` from *i* to *i + 1*. Version 2 widened the `media` check to
 admit audio, which in SQLite means rebuilding the table with foreign keys off.
+Version 4 added `sources.around`, so the first cut of a windowed fetch can start
+at the moment the user asked for.
 
 ## Lifetimes
 

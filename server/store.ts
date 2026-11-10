@@ -20,6 +20,7 @@ export type SourceRow = {
   has_audio: number
   window_start: number | null
   window_end: number | null
+  around: number | null
   sha256: string | null
   bytes: number
   error: string | null
@@ -104,6 +105,7 @@ export class Store {
     duration?: number | null
     windowStart?: number | null
     windowEnd?: number | null
+    around?: number | null
     sha256?: string | null
     bytes?: number
     jobId?: string | null
@@ -113,12 +115,12 @@ export class Store {
     const now = Date.now()
     this.db
       .prepare(
-        `INSERT INTO sources (id, kind, media, status, url, title, ext, duration, window_start, window_end, sha256, bytes, job_id, created_at, last_used_at, parent_id, stem)
-         VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO sources (id, kind, media, status, url, title, ext, duration, window_start, window_end, around, sha256, bytes, job_id, created_at, last_used_at, parent_id, stem)
+         VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         s.id, s.kind, s.media, s.url ?? null, s.title ?? "", s.ext ?? "", s.duration ?? null,
-        s.windowStart ?? null, s.windowEnd ?? null, s.sha256 ?? null, s.bytes ?? 0, s.jobId ?? null, now, now,
+        s.windowStart ?? null, s.windowEnd ?? null, s.around ?? null, s.sha256 ?? null, s.bytes ?? 0, s.jobId ?? null, now, now,
         s.parentId ?? null, s.stem ?? null,
       )
     return this.sourceById(s.id)!
@@ -239,6 +241,7 @@ export class Store {
       hasAudio: row.has_audio === 1,
       windowStart: row.window_start,
       windowEnd: row.window_end,
+      around: row.around,
       error: row.error,
       jobId: row.job_id,
       proxyUrl: ready ? `/s/${row.id}/${this.proxyName(row)}` : null,

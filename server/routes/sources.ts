@@ -51,10 +51,11 @@ export function sourcesRoutes(store: Store, config: Config, queue: JobQueue, dep
 
     let windowStart: number | null = null
     let windowEnd: number | null = null
+    let around: number | null = null
     if (meta.duration > config.fetchWholeMaxS) {
       if (parsed.data.around === undefined)
         return c.json({ error: "needs around", duration: meta.duration, title: meta.title }, 409)
-      const around = Math.min(parsed.data.around, meta.duration)
+      around = Math.min(parsed.data.around, meta.duration)
       windowStart = Math.max(0, around - config.fetchWindowS / 3)
       windowEnd = Math.min(meta.duration, windowStart + config.fetchWindowS)
     }
@@ -70,6 +71,7 @@ export function sourcesRoutes(store: Store, config: Config, queue: JobQueue, dep
       duration: windowStart !== null ? windowEnd! - windowStart : meta.duration,
       windowStart,
       windowEnd,
+      around,
       jobId: job.id,
     })
     return c.json({ source: store.sourceDto(row), job: store.jobDto(job) }, 202)
