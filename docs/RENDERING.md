@@ -136,7 +136,7 @@ the encoder in use.
 **Links.** yt-dlp downloads the best H.264 + AAC at or below 1080p, merged to mp4,
 with a size cap enforced both by `--max-filesize` and by a watchdog on the job
 directory (the flag is advisory for sectioned downloads). Videos longer than
-`FETCH_WHOLE_MAX_S` (15 min) need an `around` time; the server then fetches a
+`FETCH_WHOLE_MAX_S` (20 min) need an `around` time; the server then fetches a
 `FETCH_WINDOW_S` window starting a third of the window before it, with
 `--download-sections`. YouTube player clients are pinned to
 `mweb,web_embedded,android` (`YTDLP_PLAYER_CLIENTS`): these serve URLs that both

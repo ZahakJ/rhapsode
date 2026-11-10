@@ -19,7 +19,7 @@ That serves the web app on <http://127.0.0.1:8013>. Set `INVITE_KEY` in `.env` f
   <img src="docs/media/studio.webp" width="400" alt="The studio: stills with pan and zoom, a bilingual subtitle track and a music track">
 </p>
 
-- **Sources from anywhere.** A link goes through yt-dlp (best H.264 at or below 1080p); a file can be uploaded, pasted or dropped. For a video longer than 15 minutes only a window around the moment you point at is fetched.
+- **Sources from anywhere.** A link goes through yt-dlp (best H.264 at or below 1080p); a file can be uploaded, pasted or dropped. For a video longer than 20 minutes only a window around the moment you point at is fetched.
 - **Frame-exact trimming.** The browser scrubs a proxy cut from the same file the render reads, so the frames you pick are the frames that render.
 - **Dub, picture-in-picture or stack.** The base's own sound kept, muted, or ducked only while the clip speaks.
 - **Captions in Latin and Arabic.** An Arabic line switches face and is shaped right to left.

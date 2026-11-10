@@ -34,7 +34,7 @@ All settings are environment variables, read once at boot. `.env.example` lists 
 | `PUBLIC_ORIGIN` | `http://localhost:<PORT>` | Origin used in share-page tags |
 | `DATA_DIR` | `./data` | Database and media. Must match `[A-Za-z0-9_./-]+` |
 | `RENDER_ENCODER` | detected | `h264_nvenc` or `libx264` |
-| `FETCH_WHOLE_MAX_S` | 900 | Longer videos are fetched as a window |
+| `FETCH_WHOLE_MAX_S` | 1200 | Longer videos are fetched as a window |
 | `FETCH_WINDOW_S` | 900 | Length of that window |
 | `FETCH_ABS_MAX_S` | 14400 | Longest video accepted at all |
 | `FETCH_TIMEOUT_MS` | 900000 | Per-download timeout |
